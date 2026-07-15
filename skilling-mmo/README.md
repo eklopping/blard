@@ -67,12 +67,14 @@ DATABASE_URL=postgresql://skilling:skilling@127.0.0.1:5432/skilling_mmo_test?sch
    - `ghcr.io/<owner>/skilling-mmo-game-server`
    - `ghcr.io/<owner>/skilling-mmo-worker`
    - `ghcr.io/<owner>/skilling-mmo-client` (static assets + Caddy)
-2. On the VM:
+2. On the VM (if the repo root contains a `skilling-mmo/` subfolder, set `APP_DIR` to that path):
 
 ```bash
-sudo APP_DIR=/opt/skilling-mmo GHCR_USER=... GHCR_TOKEN=... bash scripts/provision-vm.sh
-# Copy docker-compose.prod.yml + .env (set GHCR_OWNER, DOMAIN, secrets) into APP_DIR
-sudo APP_DIR=/opt/skilling-mmo DEPLOY_MODE=ghcr bash scripts/deploy.sh
+git clone git@github.com:<owner>/<repo>.git /opt/skilling-mmo-repo
+export APP_DIR=/opt/skilling-mmo-repo/skilling-mmo
+sudo APP_DIR="$APP_DIR" GHCR_USER=... GHCR_TOKEN=... bash "$APP_DIR/scripts/provision-vm.sh"
+# Configure .env in APP_DIR (GHCR_OWNER, DOMAIN, secrets)
+sudo APP_DIR="$APP_DIR" DEPLOY_MODE=ghcr bash "$APP_DIR/scripts/deploy.sh"
 ```
 
 `deploy.sh` pulls images, runs `prisma migrate deploy`, then `docker compose -f docker-compose.prod.yml up -d`.
