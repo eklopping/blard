@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skilling}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-skilling}
+      POSTGRES_DB: ${POSTGRES_DB:-skilling_mmo}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skilling} -d ${POSTGRES_DB:-skilling_mmo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    profiles: ["full"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skilling}:${POSTGRES_PASSWORD:-skilling}@postgres:5432/${POSTGRES_DB:-skilling_mmo}?schema=public
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      API_PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  game-server:
+    build:
+      context: .
+      dockerfile: apps/game-server/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skilling}:${POSTGRES_PASSWORD:-skilling}@postgres:5432/${POSTGRES_DB:-skilling_mmo}?schema=public
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      GAME_PORT: 2567
+    ports:
+      - "2567:2567"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skilling}:${POSTGRES_PASSWORD:-skilling}@postgres:5432/${POSTGRES_DB:-skilling_mmo}?schema=public
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_ENABLED: ${REDIS_ENABLED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["full"]
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "8080:80"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./apps/client/dist:/srv:ro
+    depends_on:
+      - api
+      - game-server
+
+volumes:
+  postgres_data:

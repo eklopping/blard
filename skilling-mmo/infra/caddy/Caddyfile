@@ -1,0 +1,27 @@
+{
+  http://localhost, http://{$DOMAIN:localhost} {
+    encode gzip
+
+    handle_path /api/* {
+      reverse_proxy api:3001
+    }
+
+    handle /matchmake* {
+      reverse_proxy game-server:2567
+    }
+
+    @websocket {
+      header Connection *Upgrade*
+      header Upgrade websocket
+    }
+    handle @websocket {
+      reverse_proxy game-server:2567
+    }
+
+    handle {
+      root * /srv
+      try_files {path} /index.html
+      file_server
+    }
+  }
+}
