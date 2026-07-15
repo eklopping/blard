@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.turbo
+**/*.tsbuildinfo
+apps/client/dist
+.github
+docs
+*.md
+!README.md

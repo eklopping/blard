@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  players      Player[]
+  sessions     Session[]
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name      String
+  coins     Int      @default(100)
+  x         Float    @default(160)
+  y         Float    @default(160)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  skills       SkillProgress[]
+  inventory    InventorySlot[]
+  bank         BankSlot[]
+  marketOrders MarketOrder[]
+  ledger       LedgerEntry[]
+
+  @@index([accountId])
+}
+
+model SkillProgress {
+  id       String @id @default(cuid())
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  skill    String
+  level    Int    @default(1)
+  xp       Int    @default(0)
+
+  @@unique([playerId, skill])
+  @@index([playerId])
+}
+
+model InventorySlot {
+  id       String  @id @default(cuid())
+  playerId String
+  player   Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  slot     Int
+  itemId   String?
+  quantity Int     @default(0)
+
+  @@unique([playerId, slot])
+  @@index([playerId])
+}
+
+model BankSlot {
+  id       String  @id @default(cuid())
+  playerId String
+  player   Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  slot     Int
+  itemId   String?
+  quantity Int     @default(0)
+
+  @@unique([playerId, slot])
+  @@index([playerId])
+}
+
+model ItemDefinition {
+  id          String  @id
+  name        String
+  stackable   Boolean @default(true)
+  maxStack    Int     @default(1000)
+  description String?
+
+  marketOrders MarketOrder[]
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  OPEN
+  PARTIAL
+  FILLED
+  CANCELLED
+}
+
+model MarketOrder {
+  id        String      @id @default(cuid())
+  playerId  String
+  player    Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  side      OrderSide
+  itemId    String
+  item      ItemDefinition @relation(fields: [itemId], references: [id])
+  price     Int
+  quantity  Int
+  filledQty Int         @default(0)
+  status    OrderStatus @default(OPEN)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([itemId, side, status, price])
+  @@index([playerId])
+  @@index([status, createdAt])
+}
+
+enum LedgerType {
+  TRADE
+  CURRENCY
+  ITEM
+  SKILL_REWARD
+  SYSTEM
+}
+
+model LedgerEntry {
+  id         String     @id @default(cuid())
+  playerId   String
+  player     Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  type       LedgerType
+  itemId     String?
+  deltaQty   Int?
+  deltaCoins Int?
+  refType    String?
+  refId      String?
+  meta       Json?
+  createdAt  DateTime   @default(now())
+
+  @@index([playerId, createdAt])
+  @@index([refType, refId])
+}
+
+/// Optional DB-backed session when Redis is unavailable
+model Session {
+  id        String   @id @default(cuid())
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([expiresAt])
+}
