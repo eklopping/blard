@@ -1,33 +1,31 @@
 import { useState } from "react";
-import type { AuthResponse } from "@skilling-mmo/shared";
+import type { AccountAuthResponse } from "@skilling-mmo/shared";
 
 export function AuthPanel({
   apiBase,
-  onAuth,
+  onAccountAuth,
 }: {
   apiBase: string;
-  onAuth: (res: AuthResponse) => void;
+  onAccountAuth: (res: AccountAuthResponse) => void;
 }) {
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(mode: "login" | "register") {
+  async function submit() {
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, string> = { username, password };
-      if (mode === "register" && displayName) body.displayName = displayName;
       const r = await fetch(`${apiBase}/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ username, password }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "auth_failed");
-      onAuth(data as AuthResponse);
+      onAccountAuth(data as AccountAuthResponse);
     } catch (e: any) {
       setError(e.message ?? String(e));
     } finally {
@@ -36,13 +34,38 @@ export function AuthPanel({
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-card">
-        <h1>Skilling MMO</h1>
-        <p>Chop trees. Trade logs. Grow skills.</p>
+    <div className="lobby-screen">
+      <div className="lobby-card auth-card">
+        <div className="lobby-brand">
+          <h1>Skilling MMO</h1>
+          <p className="tagline">Choose your path. Master your trade.</p>
+        </div>
+
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={mode === "login" ? "active" : ""}
+            onClick={() => setMode("login")}
+          >
+            Log in
+          </button>
+          <button
+            type="button"
+            className={mode === "register" ? "active" : ""}
+            onClick={() => setMode("register")}
+          >
+            Register
+          </button>
+        </div>
+
         <label>
           Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            placeholder="adventurer"
+          />
         </label>
         <label>
           Password
@@ -50,21 +73,15 @@ export function AuthPanel({
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            placeholder="••••••••"
           />
         </label>
-        <label>
-          Display name (register)
-          <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-        </label>
-        <div className="row">
-          <button type="button" disabled={busy} onClick={() => submit("login")}>
-            Log in
-          </button>
-          <button type="button" disabled={busy} onClick={() => submit("register")}>
-            Register
-          </button>
-        </div>
+
+        <button type="button" className="primary" disabled={busy} onClick={() => void submit()}>
+          {busy ? "Please wait…" : mode === "login" ? "Enter realm" : "Create account"}
+        </button>
+
         {error && <div className="err">{error}</div>}
       </div>
     </div>

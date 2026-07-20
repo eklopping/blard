@@ -2,12 +2,49 @@
 
 export const TICK_MS = 600;
 
-export const SKILLS = {
-  WOODCUTTING: "woodcutting",
-  // TODO: mining, fishing, crafting
+export const MAX_CHARACTERS_PER_ACCOUNT = 3;
+
+export const PROFESSIONS = {
+  WOODSMAN: "woodsman",
+  FARMER: "farmer",
+  MINER: "miner",
 } as const;
 
-export type SkillId = (typeof SKILLS)[keyof typeof SKILLS];
+export type ProfessionId = (typeof PROFESSIONS)[keyof typeof PROFESSIONS];
+
+export const PROFESSION_LABELS: Record<ProfessionId, string> = {
+  [PROFESSIONS.WOODSMAN]: "Woodsman",
+  [PROFESSIONS.FARMER]: "Farmer",
+  [PROFESSIONS.MINER]: "Miner",
+};
+
+export const PROFESSION_DESCRIPTIONS: Record<ProfessionId, string> = {
+  [PROFESSIONS.WOODSMAN]: "Harvest timber and craft from the forest.",
+  [PROFESSIONS.FARMER]: "Grow crops and tend the land.",
+  [PROFESSIONS.MINER]: "Extract ore and gems from the earth.",
+};
+
+/** Skills available to every profession. */
+export const GENERAL_SKILLS = {
+  // TODO: combat, trading, survival
+} as const;
+
+export type GeneralSkillId = (typeof GENERAL_SKILLS)[keyof typeof GENERAL_SKILLS];
+
+export const SKILLS = {
+  WOODCUTTING: "woodcutting",
+  FARMING: "farming",
+  MINING: "mining",
+} as const;
+
+export type SkillId = (typeof SKILLS)[keyof typeof SKILLS] | GeneralSkillId;
+
+/** Starting profession skills (level 1 at character creation). */
+export const PROFESSION_STARTING_SKILLS: Record<ProfessionId, SkillId[]> = {
+  [PROFESSIONS.WOODSMAN]: [SKILLS.WOODCUTTING],
+  [PROFESSIONS.FARMER]: [SKILLS.FARMING],
+  [PROFESSIONS.MINER]: [SKILLS.MINING],
+};
 
 /** XP required to reach level (index = level). Level 1 starts with 0 XP. */
 export function xpForLevel(level: number): number {
@@ -100,6 +137,7 @@ export interface SelfSnapshot {
   inventory: InventorySlotDto[];
   skills: SkillProgressDto[];
   coins: number;
+  profession?: ProfessionId;
 }
 
 export interface InventorySlotDto {
@@ -146,7 +184,6 @@ export interface PlaceOrderRequest {
 export interface AuthRegisterRequest {
   username: string;
   password: string;
-  displayName?: string;
 }
 
 export interface AuthLoginRequest {
@@ -154,9 +191,48 @@ export interface AuthLoginRequest {
   password: string;
 }
 
-export interface AuthResponse {
+/** Account-level session (no character selected yet). */
+export interface AccountAuthResponse {
   accessToken: string;
-  playerId: string;
   username: string;
+}
+
+/** Character selected — includes playerId for game/API routes. */
+export interface CharacterAuthResponse {
+  accessToken: string;
+  username: string;
+  playerId: string;
   displayName: string;
+  profession: ProfessionId;
+}
+
+export type AuthResponse = AccountAuthResponse | CharacterAuthResponse;
+
+export function isCharacterSession(
+  auth: AuthResponse,
+): auth is CharacterAuthResponse {
+  return "playerId" in auth && typeof auth.playerId === "string";
+}
+
+export interface CharacterSummary {
+  id: string;
+  name: string;
+  profession: ProfessionId;
+  coins: number;
+  createdAt: string;
+}
+
+export interface CharacterListResponse {
+  characters: CharacterSummary[];
+  maxCharacters: number;
+  slotsRemaining: number;
+}
+
+export interface CreateCharacterRequest {
+  name: string;
+  profession: ProfessionId;
+}
+
+export interface SelectCharacterRequest {
+  playerId: string;
 }

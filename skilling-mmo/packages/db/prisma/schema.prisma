@@ -18,15 +18,16 @@ model Account {
 }
 
 model Player {
-  id        String   @id @default(cuid())
-  accountId String
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  name      String
-  coins     Int      @default(100)
-  x         Float    @default(160)
-  y         Float    @default(160)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String     @id @default(cuid())
+  accountId  String
+  account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name       String
+  profession Profession @default(WOODSMAN)
+  coins      Int        @default(100)
+  x          Float      @default(160)
+  y          Float      @default(160)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
   skills       SkillProgress[]
   inventory    InventorySlot[]
@@ -35,6 +36,12 @@ model Player {
   ledger       LedgerEntry[]
 
   @@index([accountId])
+}
+
+enum Profession {
+  WOODSMAN
+  FARMER
+  MINER
 }
 
 model SkillProgress {

@@ -2,28 +2,30 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "@skilling-mmo/db";
 
 export async function playerRoutes(app: FastifyInstance) {
-  app.get("/inventory", { preHandler: [app.authenticate] }, async (req) => {
+  const auth = { preHandler: [app.authenticateCharacter] };
+
+  app.get("/inventory", auth, async (req) => {
     const slots = await prisma.inventorySlot.findMany({
-      where: { playerId: req.user.playerId },
+      where: { playerId: req.user.playerId! },
       orderBy: { slot: "asc" },
     });
     return { slots };
   });
 
-  app.get("/bank", { preHandler: [app.authenticate] }, async (req) => {
+  app.get("/bank", auth, async (req) => {
     const slots = await prisma.bankSlot.findMany({
-      where: { playerId: req.user.playerId },
+      where: { playerId: req.user.playerId! },
       orderBy: { slot: "asc" },
     });
     return { slots };
   });
 
-  app.post("/bank/deposit", { preHandler: [app.authenticate] }, async (req, reply) => {
+  app.post("/bank/deposit", auth, async (req, reply) => {
     const body = req.body as { invSlot?: number; quantity?: number };
     if (body.invSlot == null || !body.quantity || body.quantity < 1) {
       return reply.code(400).send({ error: "invalid_payload" });
     }
-    const playerId = req.user.playerId;
+    const playerId = req.user.playerId!;
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -65,12 +67,12 @@ export async function playerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/bank/withdraw", { preHandler: [app.authenticate] }, async (req, reply) => {
+  app.post("/bank/withdraw", auth, async (req, reply) => {
     const body = req.body as { bankSlot?: number; quantity?: number };
     if (body.bankSlot == null || !body.quantity || body.quantity < 1) {
       return reply.code(400).send({ error: "invalid_payload" });
     }
-    const playerId = req.user.playerId;
+    const playerId = req.user.playerId!;
 
     try {
       await prisma.$transaction(async (tx) => {

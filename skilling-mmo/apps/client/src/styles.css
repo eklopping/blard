@@ -42,3 +42,350 @@ body,
 #ui-root > * {
   pointer-events: auto;
 }
+
+/* Lobby / auth screens */
+.lobby-screen {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: radial-gradient(ellipse at 30% 15%, #2a4a2a 0%, var(--bg-deep) 55%);
+  pointer-events: auto;
+}
+
+.lobby-card {
+  width: min(720px, 96vw);
+  padding: 1.5rem 1.75rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.lobby-brand h1 {
+  font-family: var(--font-display);
+  color: var(--accent);
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.tagline,
+.muted {
+  color: var(--muted);
+}
+
+.tagline {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.lobby-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.lobby-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  color: var(--accent);
+  font-size: 1.35rem;
+}
+
+.lobby-card label {
+  display: block;
+  font-size: 0.8rem;
+  margin-top: 0.75rem;
+  color: var(--muted);
+}
+
+.lobby-card input {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: var(--font-ui);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.auth-tabs button {
+  flex: 1;
+  padding: 0.45rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.auth-tabs button.active {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+button.primary {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: var(--accent);
+  color: #1a1a12;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary.wide {
+  margin-top: 1.25rem;
+}
+
+button.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.err {
+  color: var(--danger);
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.section-label {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.character-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.character-slot {
+  min-height: 140px;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  color: var(--fg);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.character-slot.filled:hover {
+  border-color: var(--accent);
+  background: rgba(196, 163, 90, 0.08);
+}
+
+.character-slot.empty {
+  justify-content: center;
+  align-items: center;
+  cursor: default;
+  opacity: 0.85;
+}
+
+.character-slot strong {
+  font-size: 1.1rem;
+}
+
+.slot-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+.slot-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.slot-action {
+  margin-top: auto;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.profession-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.65rem;
+}
+
+.profession-card {
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--fg);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-family: var(--font-ui);
+}
+
+.profession-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: rgba(196, 163, 90, 0.1);
+}
+
+.profession-icon {
+  font-size: 1.5rem;
+}
+
+.profession-desc,
+.profession-skills {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.profession-woodsman .slot-label,
+.profession-woodsman.selected {
+  --accent: #8fbc6a;
+}
+
+.profession-farmer .slot-label,
+.profession-farmer.selected {
+  --accent: #c4a35a;
+}
+
+.profession-miner .slot-label,
+.profession-miner.selected {
+  --accent: #8aa4c4;
+}
+
+#game-root.lobby-backdrop {
+  filter: blur(2px) brightness(0.35);
+}
+
+.hud-top {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(180deg, var(--bg-panel), transparent);
+}
+
+.brand {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--accent);
+}
+
+.hud-top nav {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.hud-top button,
+.panel button {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.hud-top button:hover,
+.panel button:hover {
+  background: var(--accent);
+  color: #1a1a12;
+}
+
+.skills {
+  position: absolute;
+  top: 3rem;
+  left: 0.75rem;
+  background: var(--bg-panel);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.panel {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: min(360px, 92vw);
+  max-height: 50vh;
+  overflow: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.slot {
+  aspect-ratio: 1;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 2px;
+  text-align: center;
+}
+
+.slot.empty {
+  opacity: 0.4;
+}
+
+.market-row {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.4rem 0;
+  flex-wrap: wrap;
+}
+
+.market-row input,
+.market-row select {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.35rem;
+}
+

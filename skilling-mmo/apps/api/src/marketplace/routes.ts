@@ -55,7 +55,9 @@ export async function marketRoutes(app: FastifyInstance) {
     };
   });
 
-  app.get("/history", { preHandler: [app.authenticate] }, async (req) => {
+  const auth = { preHandler: [app.authenticateCharacter] };
+
+  app.get("/history", auth, async (req) => {
     const entries = await prisma.ledgerEntry.findMany({
       where: { playerId: req.user.playerId, type: "TRADE" },
       orderBy: { createdAt: "desc" },
@@ -64,7 +66,7 @@ export async function marketRoutes(app: FastifyInstance) {
     return { entries };
   });
 
-  app.get("/mine", { preHandler: [app.authenticate] }, async (req) => {
+  app.get("/mine", auth, async (req) => {
     const orders = await prisma.marketOrder.findMany({
       where: { playerId: req.user.playerId },
       orderBy: { createdAt: "desc" },
@@ -73,13 +75,13 @@ export async function marketRoutes(app: FastifyInstance) {
     return { orders };
   });
 
-  app.post("/orders", { preHandler: [app.authenticate] }, async (req, reply) => {
+  app.post("/orders", auth, async (req, reply) => {
     const parsed = placeSchema.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "invalid_payload", details: parsed.error.flatten() });
     }
     const { side, itemId, price, quantity } = parsed.data;
-    const playerId = req.user.playerId;
+    const playerId = req.user.playerId!;
 
     const item = await prisma.itemDefinition.findUnique({ where: { id: itemId } });
     if (!item) return reply.code(400).send({ error: "unknown_item" });
@@ -126,7 +128,7 @@ export async function marketRoutes(app: FastifyInstance) {
     return { order: updated };
   });
 
-  app.post("/orders/:id/cancel", { preHandler: [app.authenticate] }, async (req, reply) => {
+  app.post("/orders/:id/cancel", auth, async (req, reply) => {
     const { id } = req.params as { id: string };
     const order = await prisma.marketOrder.findUnique({ where: { id } });
     if (!order || order.playerId !== req.user.playerId) {

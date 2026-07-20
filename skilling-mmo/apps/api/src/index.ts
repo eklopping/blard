@@ -41,6 +41,17 @@ async function main() {
     }
   });
 
+  app.decorate("authenticateCharacter", async (request: any, reply: any) => {
+    try {
+      await request.jwtVerify();
+      if (!request.user?.playerId) {
+        return reply.code(403).send({ error: "character_required" });
+      }
+    } catch {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+  });
+
   app.get("/health", async () => ({
     ok: true,
     service: "api",
@@ -78,12 +89,13 @@ main().catch((err) => {
 declare module "fastify" {
   interface FastifyInstance {
     authenticate: (request: any, reply: any) => Promise<void>;
+    authenticateCharacter: (request: any, reply: any) => Promise<void>;
   }
 }
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { sub: string; playerId: string; username: string };
-    user: { sub: string; playerId: string; username: string };
+    payload: { sub: string; username: string; playerId?: string; profession?: string };
+    user: { sub: string; username: string; playerId?: string; profession?: string };
   }
 }

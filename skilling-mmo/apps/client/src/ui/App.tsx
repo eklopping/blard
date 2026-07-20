@@ -2,15 +2,23 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { createGame } from "../phaser/createGame";
 import type { GameBridge } from "../phaser/createGame";
 import { AuthPanel } from "./AuthPanel";
+import { CharacterSelectPanel } from "./CharacterSelectPanel";
 import { InventoryPanel } from "./InventoryPanel";
 import { BankPanel } from "./BankPanel";
 import { MarketPanel } from "./MarketPanel";
 import { connectGame, type GameConnection } from "../net/colyseusClient";
-import type {
-  InventorySlotDto,
-  SkillProgressDto,
-  AuthResponse,
-} from "@skilling-mmo/shared";
+import type { InventorySlotDto, SkillProgressDto, CharacterAuthResponse } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS } from "@skilling-mmo/shared";
+import {
+  type GameSession,
+  loadSession,
+  saveSession,
+  applyAccountAuth,
+  applyCharacterAuth,
+  clearCharacter,
+  migrateLegacyAuth,
+  activeGameToken,
+} from "../session";
 
 type Panel = "inventory" | "bank" | "market" | null;
 
@@ -21,10 +29,9 @@ export function App() {
   const bridge = useRef<GameBridge | null>(null);
   const conn = useRef<GameConnection | null>(null);
 
-  const [auth, setAuth] = useState<AuthResponse | null>(() => {
-    const raw = localStorage.getItem("skilling_auth");
-    return raw ? (JSON.parse(raw) as AuthResponse) : null;
-  });
+  const [session, setSession] = useState<GameSession | null>(
+    () => loadSession() ?? migrateLegacyAuth(),
+  );
   const [panel, setPanel] = useState<Panel>("inventory");
   const [inventory, setInventory] = useState<InventorySlotDto[]>([]);
   const [skills, setSkills] = useState<SkillProgressDto[]>([]);
@@ -32,29 +39,48 @@ export function App() {
   const [status, setStatus] = useState("idle");
   const [bank, setBank] = useState<InventorySlotDto[]>([]);
 
-  const onAuth = useCallback((res: AuthResponse) => {
-    localStorage.setItem("skilling_auth", JSON.stringify(res));
-    setAuth(res);
+  const character = session?.character ?? null;
+  const gameToken = session ? activeGameToken(session) : null;
+
+  const onAccountAuth = useCallback((res: Parameters<typeof applyAccountAuth>[0]) => {
+    setSession(applyAccountAuth(res));
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("skilling_auth");
-    setAuth(null);
+  const onCharacterAuth = useCallback(
+    (res: CharacterAuthResponse) => {
+      setSession((prev) => (prev ? applyCharacterAuth(prev, res) : null));
+    },
+    [],
+  );
+
+  const logoutAccount = useCallback(() => {
+    saveSession(null);
+    setSession(null);
     conn.current?.leave();
     conn.current = null;
     setStatus("logged out");
   }, []);
 
+  const switchCharacter = useCallback(() => {
+    setSession((prev) => {
+      if (!prev) return null;
+      conn.current?.leave();
+      conn.current = null;
+      setStatus("idle");
+      return clearCharacter(prev);
+    });
+  }, []);
+
   const refreshBank = useCallback(async () => {
-    if (!auth) return;
+    if (!gameToken) return;
     const r = await fetch(`${API}/player/bank`, {
-      headers: { Authorization: `Bearer ${auth.accessToken}` },
+      headers: { Authorization: `Bearer ${gameToken}` },
     });
     if (r.ok) {
       const data = await r.json();
       setBank(data.slots);
     }
-  }, [auth]);
+  }, [gameToken]);
 
   useEffect(() => {
     if (!gameHost.current || bridge.current) return;
@@ -70,13 +96,13 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth) return;
+    if (!gameToken) return;
     let cancelled = false;
 
     (async () => {
       setStatus("connecting…");
       try {
-        const c = await connectGame(auth.accessToken, {
+        const c = await connectGame(gameToken, {
           onSnapshot: (snap) => {
             if (cancelled) return;
             setInventory(snap.you.inventory);
@@ -128,24 +154,35 @@ export function App() {
       conn.current?.leave();
       conn.current = null;
     };
-  }, [auth]);
+  }, [gameToken]);
 
   useEffect(() => {
     if (panel === "bank") void refreshBank();
   }, [panel, refreshBank]);
 
+  const inLobby = !session || !character;
+
   return (
     <>
-      <div id="game-root" ref={gameHost} />
+      <div id="game-root" ref={gameHost} className={inLobby ? "lobby-backdrop" : ""} />
       <div id="ui-root">
-        {!auth ? (
-          <AuthPanel apiBase={API} onAuth={onAuth} />
+        {!session ? (
+          <AuthPanel apiBase={API} onAccountAuth={onAccountAuth} />
+        ) : !character ? (
+          <CharacterSelectPanel
+            apiBase={API}
+            accountToken={session.accountToken}
+            username={session.username}
+            onSelect={onCharacterAuth}
+            onLogout={logoutAccount}
+          />
         ) : (
           <>
             <header className="hud-top">
               <strong className="brand">Skilling MMO</strong>
               <span className="muted">
-                {auth.displayName} · {coins}c · {status}
+                {character.displayName} · {PROFESSION_LABELS[character.profession]} · {coins}c ·{" "}
+                {status}
               </span>
               <nav>
                 <button type="button" onClick={() => setPanel("inventory")}>
@@ -157,7 +194,10 @@ export function App() {
                 <button type="button" onClick={() => setPanel("market")}>
                   Market
                 </button>
-                <button type="button" onClick={logout}>
+                <button type="button" onClick={switchCharacter}>
+                  Characters
+                </button>
+                <button type="button" onClick={logoutAccount}>
                   Log out
                 </button>
               </nav>
@@ -174,12 +214,12 @@ export function App() {
               <BankPanel
                 inventory={inventory}
                 bank={bank}
-                token={auth.accessToken}
+                token={gameToken!}
                 apiBase={API}
                 onRefresh={async () => {
                   await refreshBank();
                   const r = await fetch(`${API}/player/inventory`, {
-                    headers: { Authorization: `Bearer ${auth.accessToken}` },
+                    headers: { Authorization: `Bearer ${gameToken}` },
                   });
                   if (r.ok) {
                     const d = await r.json();
@@ -189,68 +229,11 @@ export function App() {
               />
             )}
             {panel === "market" && (
-              <MarketPanel token={auth.accessToken} apiBase={API} coins={coins} />
+              <MarketPanel token={gameToken!} apiBase={API} coins={coins} />
             )}
           </>
         )}
       </div>
-      <style>{`
-        .hud-top {
-          display: flex; gap: 1rem; align-items: center;
-          padding: 0.6rem 1rem;
-          background: linear-gradient(180deg, var(--bg-panel), transparent);
-        }
-        .brand { font-family: var(--font-display); font-size: 1.25rem; color: var(--accent); }
-        .muted { color: var(--muted); font-size: 0.85rem; flex: 1; }
-        .hud-top nav { display: flex; gap: 0.4rem; }
-        .hud-top button, .panel button {
-          background: var(--accent-dim); color: var(--fg); border: 1px solid var(--border);
-          padding: 0.35rem 0.7rem; cursor: pointer; font-family: var(--font-ui);
-        }
-        .hud-top button:hover, .panel button:hover { background: var(--accent); color: #1a1a12; }
-        .skills {
-          position: absolute; top: 3rem; left: 0.75rem;
-          background: var(--bg-panel); padding: 0.5rem 0.75rem;
-          border: 1px solid var(--border); font-size: 0.8rem;
-        }
-        .panel {
-          position: absolute; right: 0.75rem; bottom: 0.75rem;
-          width: min(360px, 92vw); max-height: 50vh; overflow: auto;
-          background: var(--bg-panel); border: 1px solid var(--border);
-          padding: 0.75rem;
-        }
-        .panel h2 { margin: 0 0 0.5rem; font-family: var(--font-display); font-size: 1rem; color: var(--accent); }
-        .grid {
-          display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
-        }
-        .slot {
-          aspect-ratio: 1; background: rgba(0,0,0,0.35); border: 1px solid var(--border);
-          font-size: 0.65rem; display: flex; flex-direction: column; align-items: center; justify-content: center;
-          cursor: pointer; padding: 2px; text-align: center;
-        }
-        .slot.empty { opacity: 0.4; }
-        .auth-wrap {
-          position: absolute; inset: 0; display: grid; place-items: center;
-          background: radial-gradient(ellipse at 30% 20%, #2a4a2a, var(--bg-deep) 60%);
-        }
-        .auth-card {
-          width: min(360px, 92vw); padding: 1.5rem;
-          background: var(--bg-panel); border: 1px solid var(--border);
-        }
-        .auth-card h1 { font-family: var(--font-display); color: var(--accent); margin: 0 0 0.25rem; }
-        .auth-card p { color: var(--muted); margin: 0 0 1rem; font-size: 0.9rem; }
-        .auth-card label { display: block; font-size: 0.8rem; margin-top: 0.5rem; color: var(--muted); }
-        .auth-card input {
-          width: 100%; margin-top: 0.25rem; padding: 0.5rem;
-          background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: var(--fg);
-        }
-        .auth-card .row { display: flex; gap: 0.5rem; margin-top: 1rem; }
-        .auth-card .err { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; }
-        .market-row { display: flex; gap: 0.4rem; margin: 0.4rem 0; flex-wrap: wrap; }
-        .market-row input, .market-row select {
-          background: rgba(0,0,0,0.4); border: 1px solid var(--border); color: var(--fg); padding: 0.35rem;
-        }
-      `}</style>
     </>
   );
 }
