@@ -1,27 +1,26 @@
-{
-  http://localhost, http://{$DOMAIN:localhost} {
-    encode gzip
+# Site block (not global options). DOMAIN from env, e.g. VM IP or hostname.
+http://{$DOMAIN:localhost}, :80 {
+	encode gzip
 
-    handle_path /api/* {
-      reverse_proxy api:3001
-    }
+	handle_path /api/* {
+		reverse_proxy api:3001
+	}
 
-    handle /matchmake* {
-      reverse_proxy game-server:2567
-    }
+	handle /matchmake* {
+		reverse_proxy game-server:2567
+	}
 
-    @websocket {
-      header Connection *Upgrade*
-      header Upgrade websocket
-    }
-    handle @websocket {
-      reverse_proxy game-server:2567
-    }
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @websocket {
+		reverse_proxy game-server:2567
+	}
 
-    handle {
-      root * /srv
-      try_files {path} /index.html
-      file_server
-    }
-  }
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 }

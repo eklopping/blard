@@ -1,5 +1,9 @@
-import { Room, Client } from "colyseus";
+// colyseus is CJS — default import avoids ESM named-export errors under NodeNext
+import colyseus from "colyseus";
+import type { Client } from "colyseus";
 import { Schema, type, MapSchema } from "@colyseus/schema";
+
+const { Room } = colyseus;
 import jwt from "jsonwebtoken";
 import { prisma, LedgerType } from "@skilling-mmo/db";
 import {

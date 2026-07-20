@@ -1,11 +1,15 @@
-import { Server } from "colyseus";
-import { WebSocketTransport } from "@colyseus/ws-transport";
+// colyseus is CJS — default import avoids ESM named-export errors under NodeNext
+import colyseus from "colyseus";
+import wsTransport from "@colyseus/ws-transport";
 import express from "express";
 import { createServer } from "http";
 import { WorldRoom } from "./rooms/WorldRoom.js";
 // TODO: PvPMatchmaker — Redis list of queued fighter IDs; FightRoom registration when combat ships
 // import { FightRoom } from "./rooms/FightRoom.js";
 // import { PvPMatchmaker } from "./pvp/matchmaker.js";
+
+const { Server } = colyseus;
+const { WebSocketTransport } = wsTransport;
 
 const port = Number(process.env.GAME_PORT ?? 2567);
 const host = process.env.GAME_HOST ?? "0.0.0.0";

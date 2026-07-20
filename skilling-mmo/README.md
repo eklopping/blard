@@ -23,15 +23,14 @@ docker compose --profile full up -d redis worker
 npm run dev:worker
 ```
 
-Or build everything via Compose (Caddy on http://localhost:8080 — build client first):
+Or build everything via Compose (Caddy serves the client on **http://localhost** port 80):
 
 ```bash
 cp .env.example .env
-npm install && npm run build -w @skilling-mmo/shared && npm run build -w @skilling-mmo/client
-docker compose up --build
+docker compose --profile full up --build
 ```
 
-Use compose profile `full` for Redis + worker: `docker compose --profile full up --build`.
+The `caddy` service builds the Vite client into the image — no host `apps/client/dist` required.
 
 ## Repo layout
 
@@ -79,12 +78,33 @@ sudo APP_DIR="$APP_DIR" DEPLOY_MODE=ghcr bash "$APP_DIR/scripts/deploy.sh"
 
 `deploy.sh` pulls images, runs `prisma migrate deploy`, then `docker compose -f docker-compose.prod.yml up -d`.
 
-## Deploy path B — source build on VM
+## Deploy path B — source build on VM (recommended first deploy)
 
 ```bash
-sudo bash scripts/provision-vm.sh
-# Clone repo into APP_DIR, configure .env
-sudo APP_DIR=/opt/skilling-mmo DEPLOY_MODE=source bash scripts/deploy.sh
+sudo git clone https://github.com/eklopping/blard.git /opt/skilling-mmo-repo
+export APP_DIR=/opt/skilling-mmo-repo/skilling-mmo
+
+sudo APP_DIR="$APP_DIR" bash "$APP_DIR/scripts/provision-vm.sh"
+sudo cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+# Edit JWT_SECRET, POSTGRES_PASSWORD, DATABASE_URL, DOMAIN, GHCR_OWNER=eklopping
+sudo nano "$APP_DIR/.env"
+
+sudo APP_DIR="$APP_DIR" DEPLOY_MODE=source bash "$APP_DIR/scripts/deploy.sh"
+```
+
+Open `http://YOUR_VM_IP` (Caddy on port 80). Confirm all six services are Up:
+
+```bash
+sudo docker compose -f "$APP_DIR/docker-compose.yml" --profile full ps
+```
+
+### Updating from git (source mode)
+
+```bash
+cd /opt/skilling-mmo-repo
+sudo git pull --ff-only
+export APP_DIR=/opt/skilling-mmo-repo/skilling-mmo
+sudo APP_DIR="$APP_DIR" DEPLOY_MODE=source bash "$APP_DIR/scripts/deploy.sh"
 ```
 
 ## Secrets

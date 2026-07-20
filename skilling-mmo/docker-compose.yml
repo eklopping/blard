@@ -42,6 +42,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
   game-server:
     build:
@@ -59,6 +60,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
   worker:
     build:
@@ -73,17 +75,22 @@ services:
       postgres:
         condition: service_healthy
     profiles: ["full"]
+    restart: unless-stopped
 
   caddy:
-    image: caddy:2
+    # Built client image (Caddy + static assets) — no host dist/ required
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
     ports:
-      - "8080:80"
-    volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./apps/client/dist:/srv:ro
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
     depends_on:
       - api
       - game-server
+    restart: unless-stopped
 
 volumes:
   postgres_data:
