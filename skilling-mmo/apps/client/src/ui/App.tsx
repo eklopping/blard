@@ -115,7 +115,11 @@ export function App() {
         }
         conn.current = c;
       } catch (e: any) {
-        setStatus(`connect failed: ${e.message ?? e}`);
+        const msg =
+          e?.message ||
+          (e?.type ? `network ${e.type}` : null) ||
+          String(e);
+        setStatus(`connect failed: ${msg}`);
       }
     })();
 

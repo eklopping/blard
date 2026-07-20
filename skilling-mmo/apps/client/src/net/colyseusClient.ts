@@ -6,15 +6,24 @@ import type {
   SkillProgressDto,
 } from "@skilling-mmo/shared";
 
-function defaultWsUrl(): string {
+/** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
+function resolveEndpoint(): string {
+  const env = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
+  if (
+    env &&
+    (env.startsWith("ws://") ||
+      env.startsWith("wss://") ||
+      env.startsWith("http://") ||
+      env.startsWith("https://"))
+  ) {
+    return env.replace(/\/$/, "");
+  }
   if (typeof window !== "undefined" && window.location?.host) {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${window.location.host}`;
   }
   return "ws://127.0.0.1:2567";
 }
-
-const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined)?.trim() || defaultWsUrl();
 
 export interface GameConnection {
   sendIntent: (msg: ClientMessage) => void;
@@ -31,12 +40,20 @@ export interface ConnectHandlers {
   reconcilePlayer: (id: string, x: number, y: number) => void;
 }
 
+function errorText(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === "object" && "type" in e) {
+    return `network ${(e as { type: string }).type}`;
+  }
+  return String(e);
+}
+
 export async function connectGame(
   token: string,
   handlers: ConnectHandlers,
 ): Promise<GameConnection> {
-  const endpoint = WS_URL.replace(/\/$/, "");
-  const client = new Client(endpoint.startsWith("ws") ? endpoint : `ws://${endpoint}`);
+  const endpoint = resolveEndpoint();
+  const client = new Client(endpoint);
 
   let room: Room | null = null;
   let intentionalLeave = false;
@@ -56,7 +73,6 @@ export async function connectGame(
     room.onMessage("ActionResult", (msg) => handlers.onAction(msg));
 
     room.onStateChange((state: any) => {
-      // Reconcile positions from authoritative schema state
       state.players?.forEach((p: any, id: string) => {
         handlers.reconcilePlayer(id, p.x, p.y);
       });
@@ -82,7 +98,7 @@ export async function connectGame(
     setTimeout(() => {
       if (intentionalLeave) return;
       join().catch((e) => {
-        handlers.onStatus(`reconnect failed: ${e.message ?? e}`);
+        handlers.onStatus(`reconnect failed: ${errorText(e)}`);
         scheduleReconnect();
       });
     }, delay);

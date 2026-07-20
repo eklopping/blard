@@ -13,7 +13,9 @@ COPY packages/shared packages/shared
 COPY apps/client apps/client
 COPY tsconfig.base.json ./
 ARG VITE_API_URL=/api
-ARG VITE_WS_URL=/ws
+# Leave empty so the browser uses same-origin (Caddy proxies /matchmake + WebSocket).
+# Do NOT set to /ws — Colyseus.js needs a full host URL, not a path.
+ARG VITE_WS_URL=
 ENV VITE_API_URL=$VITE_API_URL VITE_WS_URL=$VITE_WS_URL
 RUN npm run build -w @skilling-mmo/shared && npm run build -w @skilling-mmo/client
 
