@@ -6,6 +6,7 @@ import type {
 } from "@skilling-mmo/shared";
 import { PROFESSION_LABELS } from "@skilling-mmo/shared";
 import { CharacterCreatePanel } from "./CharacterCreatePanel";
+import { LobbyShell } from "./LobbyShell";
 
 export function CharacterSelectPanel({
   apiBase,
@@ -81,7 +82,7 @@ export function CharacterSelectPanel({
   const canCreate = (data?.slotsRemaining ?? 0) > 0;
 
   return (
-    <div className="lobby-screen">
+    <LobbyShell>
       <div className="lobby-card character-card">
         <div className="lobby-header">
           <div>
@@ -137,6 +138,6 @@ export function CharacterSelectPanel({
 
         {error && <div className="err">{error}</div>}
       </div>
-    </div>
+    </LobbyShell>
   );
 }

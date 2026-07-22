@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AccountAuthResponse } from "@skilling-mmo/shared";
+import { LobbyShell } from "./LobbyShell";
 
 export function AuthPanel({
   apiBase,
@@ -34,7 +35,7 @@ export function AuthPanel({
   }
 
   return (
-    <div className="lobby-screen">
+    <LobbyShell>
       <div className="lobby-card auth-card">
         <div className="lobby-brand">
           <h1>Skilling MMO</h1>
@@ -84,6 +85,6 @@ export function AuthPanel({
 
         {error && <div className="err">{error}</div>}
       </div>
-    </div>
+    </LobbyShell>
   );
 }

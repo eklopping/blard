@@ -7,6 +7,7 @@ import {
   type CharacterAuthResponse,
   type ProfessionId,
 } from "@skilling-mmo/shared";
+import { LobbyShell } from "./LobbyShell";
 
 const PROFESSION_LIST: ProfessionId[] = [
   PROFESSIONS.WOODSMAN,
@@ -61,7 +62,7 @@ export function CharacterCreatePanel({
   }
 
   return (
-    <div className="lobby-screen">
+    <LobbyShell>
       <div className="lobby-card create-card">
         <div className="lobby-header">
           <div>
@@ -116,6 +117,6 @@ export function CharacterCreatePanel({
 
         {error && <div className="err">{error}</div>}
       </div>
-    </div>
+    </LobbyShell>
   );
 }

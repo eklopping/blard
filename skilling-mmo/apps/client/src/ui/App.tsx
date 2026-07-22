@@ -3,6 +3,7 @@ import { createGame } from "../phaser/createGame";
 import type { GameBridge } from "../phaser/createGame";
 import { AuthPanel } from "./AuthPanel";
 import { CharacterSelectPanel } from "./CharacterSelectPanel";
+import { LobbyShell } from "./LobbyShell";
 import { InventoryPanel } from "./InventoryPanel";
 import { BankPanel } from "./BankPanel";
 import { MarketPanel } from "./MarketPanel";
@@ -161,10 +162,17 @@ export function App() {
   }, [panel, refreshBank]);
 
   const inLobby = !session || !character;
+  const connectFailed = !!character && status.startsWith("connect failed");
+  const connecting =
+    !!character && status !== "connected" && !connectFailed;
 
   return (
     <>
-      <div id="game-root" ref={gameHost} className={inLobby ? "lobby-backdrop" : ""} />
+      <div
+        id="game-root"
+        ref={gameHost}
+        className={inLobby || connecting || connectFailed ? "lobby-backdrop" : ""}
+      />
       <div id="ui-root">
         {!session ? (
           <AuthPanel apiBase={API} onAccountAuth={onAccountAuth} />
@@ -176,6 +184,19 @@ export function App() {
             onSelect={onCharacterAuth}
             onLogout={logoutAccount}
           />
+        ) : connecting || connectFailed ? (
+          <LobbyShell loadingLabel={connectFailed ? status : status === "idle" ? "Entering world…" : status}>
+            {connectFailed ? (
+              <div className="lobby-card auth-card" style={{ width: "min(360px, 92vw)" }}>
+                <p className="err" style={{ marginTop: 0 }}>
+                  {status}
+                </p>
+                <button type="button" className="primary" onClick={switchCharacter}>
+                  Back to characters
+                </button>
+              </div>
+            ) : null}
+          </LobbyShell>
         ) : (
           <>
             <header className="hud-top">
