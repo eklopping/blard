@@ -116,8 +116,28 @@ sudo APP_DIR="$APP_DIR" DEPLOY_MODE=source bash "$APP_DIR/scripts/deploy.sh"
 | `DATABASE_URL` | Prisma |
 | `REDIS_URL` / `REDIS_ENABLED` | Order book + BullMQ (`full` / prod) |
 | `GHCR_OWNER` | Prod image namespace |
-| `DOMAIN` | Caddy site address |
+| `DOMAIN` | Public hostname for Caddy (e.g. `play.example.com`) |
+| `ACME_EMAIL` | Optional Let's Encrypt contact email |
 | `GHCR_TOKEN` | `docker login ghcr.io` on VM |
+
+## HTTPS (custom domain + Let's Encrypt)
+
+Caddy terminates TLS. Your **JWT login tokens** stay the same; HTTPS protects them on the wire (and upgrades WebSockets to `wss://` automatically).
+
+1. Create a DNS **A** (and optional **AAAA**) record for your domain → VM public IP.
+2. Open inbound **TCP 80** and **443** on the host firewall / cloud security group (80 is required for the ACME HTTP-01 challenge).
+3. In `$APP_DIR/.env` set:
+   ```env
+   DOMAIN=play.yourdomain.com
+   ACME_EMAIL=you@yourdomain.com
+   ```
+4. Redeploy / restart Caddy so it picks up the new Caddyfile and env:
+   ```bash
+   sudo APP_DIR="$APP_DIR" DEPLOY_MODE=source bash "$APP_DIR/scripts/deploy.sh"
+   ```
+5. Visit `https://play.yourdomain.com` (not the raw IP). First request may take a few seconds while Caddy obtains the certificate.
+
+Do **not** set `DOMAIN` to a bare IP — Let's Encrypt will not issue for IPs. Keep `localhost` only for local HTTP testing.
 
 ## Backups
 

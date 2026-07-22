@@ -1,15 +1,23 @@
-# Site block (not global options). DOMAIN from env, e.g. VM IP or hostname.
-http://{$DOMAIN:localhost}, :80 {
+# Production: set DOMAIN=game.example.com (DNS A/AAAA → this VM).
+# Caddy obtains a Let's Encrypt certificate automatically on :443.
+# Local/IP-only: set DOMAIN=localhost (HTTP only; LE will not issue for IPs).
+#
+# Optional: ACME_EMAIL in the environment is used if present (Compose passes it through).
+# Certs persist in the caddy_data Docker volume.
+
+{$DOMAIN:localhost} {
 	encode gzip
 
 	handle_path /api/* {
 		reverse_proxy api:3001
 	}
 
+	# Colyseus HTTP matchmaking
 	handle /matchmake* {
 		reverse_proxy game-server:2567
 	}
 
+	# Colyseus room WebSockets (Upgrade) — must not hit file_server
 	@websocket {
 		header Connection *Upgrade*
 		header Upgrade websocket

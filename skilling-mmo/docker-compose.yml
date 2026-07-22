@@ -87,6 +87,11 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      # Persist Let's Encrypt certs across rebuilds
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - api
       - game-server
@@ -94,3 +99,5 @@ services:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
