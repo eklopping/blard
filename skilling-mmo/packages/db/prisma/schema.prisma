@@ -42,6 +42,10 @@ model Player {
   bank         BankSlot[]
   marketOrders MarketOrder[]
   ledger       LedgerEntry[]
+  chatSent     ChatMessage[] @relation("ChatSent")
+  chatReceived ChatMessage[] @relation("ChatReceived")
+  mutesGiven   ChatMute[]    @relation("MutesGiven")
+  mutesReceived ChatMute[]   @relation("MutesReceived")
 
   @@index([accountId])
 }
@@ -165,4 +169,39 @@ model Session {
 
   @@index([accountId])
   @@index([expiresAt])
+}
+
+enum ChatChannel {
+  PUBLIC
+  DIRECT
+}
+
+model ChatMessage {
+  id          String      @id @default(cuid())
+  channel     ChatChannel
+  senderId    String
+  sender      Player      @relation("ChatSent", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String?
+  recipient   Player?     @relation("ChatReceived", fields: [recipientId], references: [id], onDelete: Cascade)
+  threadKey   String?
+  body        String
+  senderName  String
+  createdAt   DateTime    @default(now())
+
+  @@index([channel, createdAt])
+  @@index([threadKey, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([senderId, createdAt])
+}
+
+model ChatMute {
+  id            String   @id @default(cuid())
+  playerId      String
+  player        Player   @relation("MutesGiven", fields: [playerId], references: [id], onDelete: Cascade)
+  mutedPlayerId String
+  mutedPlayer   Player   @relation("MutesReceived", fields: [mutedPlayerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([playerId, mutedPlayerId])
+  @@index([playerId])
 }
