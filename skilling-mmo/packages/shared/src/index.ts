@@ -133,11 +133,52 @@ export const WOODCUTTING = {
 export const INVENTORY_SIZE = 28;
 export const BANK_SIZE = 100;
 
+export const CHAT_MAX_BODY = 200;
+export const CHAT_PUBLIC_RATE_MS = 1000;
+export const CHAT_DM_RATE_MS = 500;
+export const CHAT_HISTORY_LIMIT = 50;
+
+export type ChatChannel = "PUBLIC" | "DIRECT";
+
+export interface ChatMessageDto {
+  id: string;
+  channel: ChatChannel;
+  senderId: string;
+  senderName: string;
+  recipientId: string | null;
+  threadKey: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface ChatInboxThreadDto {
+  threadKey: string;
+  otherPlayerId: string;
+  otherPlayerName: string;
+  lastBody: string;
+  lastAt: string;
+}
+
+export function dmThreadKey(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+export function validateChatBody(
+  raw: string,
+): { ok: true; body: string } | { ok: false; error: "empty" | "too_long" } {
+  const body = raw.trim();
+  if (!body) return { ok: false, error: "empty" };
+  if (body.length > CHAT_MAX_BODY) return { ok: false, error: "too_long" };
+  return { ok: true, body };
+}
+
 /** Client → server intents */
 export type ClientMessage =
   | { type: "Move"; x: number; y: number }
   | { type: "InteractResource"; resourceId: string }
-  | { type: "CancelAction" };
+  | { type: "CancelAction" }
+  | { type: "ChatPublic"; body: string }
+  | { type: "ChatDm"; recipientId: string; body: string };
 
 /** Server → client events */
 export type ServerMessage =
@@ -146,7 +187,9 @@ export type ServerMessage =
   | { type: "ActionResult"; ok: boolean; reason?: string; action?: string }
   | { type: "InventoryUpdate"; slots: InventorySlotDto[] }
   | { type: "SkillUpdate"; skill: SkillId; level: number; xp: number }
-  | { type: "BankUpdate"; slots: BankSlotDto[] };
+  | { type: "BankUpdate"; slots: BankSlotDto[] }
+  | { type: "ChatMessage"; message: ChatMessageDto }
+  | { type: "ChatError"; error: string };
 
 export interface PlayerSnapshot {
   id: string;
