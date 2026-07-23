@@ -113,7 +113,10 @@ export async function listDmThread(
   threadKey: string,
   limit: number,
 ): Promise<ChatMessageDto[]> {
-  if (!threadKey.includes(viewerId)) throw new Error("forbidden_thread");
+  const parts = threadKey.split(":");
+  if (parts.length !== 2 || (parts[0] !== viewerId && parts[1] !== viewerId)) {
+    throw new Error("forbidden_thread");
+  }
   const muted = await listMutedIds(viewerId);
   const rows = await prisma.chatMessage.findMany({
     where: {
