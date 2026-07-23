@@ -333,7 +333,7 @@ export class WorldRoom extends Room<WorldState> {
         this.broadcast("ChatMessage", { type: "ChatMessage", message });
       } catch (err) {
         console.error("[WorldRoom] chat public failed", err);
-        client.send("ChatError", { type: "ChatError", error: "send_failed" });
+        client.send("ChatError", { type: "ChatError", error: "server_error" });
       }
       return;
     }
@@ -380,7 +380,7 @@ export class WorldRoom extends Room<WorldState> {
       }
     } catch (err) {
       console.error("[WorldRoom] chat dm failed", err);
-      client.send("ChatError", { type: "ChatError", error: "send_failed" });
+      client.send("ChatError", { type: "ChatError", error: "server_error" });
     }
   }
 

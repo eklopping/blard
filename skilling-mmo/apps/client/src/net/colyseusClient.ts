@@ -4,6 +4,8 @@ import type {
   ServerMessage,
   InventorySlotDto,
   SkillProgressDto,
+  ChatMessageDto,
+  PlayerSnapshot,
 } from "@skilling-mmo/shared";
 
 /** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
@@ -28,6 +30,7 @@ function resolveEndpoint(): string {
 export interface GameConnection {
   sendIntent: (msg: ClientMessage) => void;
   leave: () => void;
+  getOnlinePlayers: () => PlayerSnapshot[];
 }
 
 export interface ConnectHandlers {
@@ -36,6 +39,8 @@ export interface ConnectHandlers {
   onSkill: (s: SkillProgressDto) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
   onStatus: (status: string) => void;
+  onChatMessage: (message: ChatMessageDto) => void;
+  onChatError: (error: string) => void;
   getPredictedPos: () => { x: number; y: number };
   reconcilePlayer: (id: string, x: number, y: number) => void;
 }
@@ -58,6 +63,7 @@ export async function connectGame(
   let room: Room | null = null;
   let intentionalLeave = false;
   let reconnectAttempt = 0;
+  let onlinePlayers: PlayerSnapshot[] = [];
 
   async function join() {
     handlers.onStatus(reconnectAttempt ? `reconnecting (${reconnectAttempt})…` : "joining…");
@@ -71,9 +77,29 @@ export async function connectGame(
       handlers.onSkill({ skill: msg.skill, level: msg.level, xp: msg.xp }),
     );
     room.onMessage("ActionResult", (msg) => handlers.onAction(msg));
+    room.onMessage("ChatMessage", (msg: Extract<ServerMessage, { type: "ChatMessage" }>) => {
+      handlers.onChatMessage(msg.message);
+    });
+    room.onMessage("ChatError", (msg: Extract<ServerMessage, { type: "ChatError" }>) => {
+      handlers.onChatError(msg.error);
+    });
 
     room.onStateChange((state: any) => {
+      onlinePlayers = [];
       state.players?.forEach((p: any, id: string) => {
+        onlinePlayers.push({
+          id,
+          name: p.name,
+          x: p.x,
+          y: p.y,
+          action: p.action || null,
+          appearance: {
+            hairColor: p.hairColor,
+            skinColor: p.skinColor,
+            shirtColor: p.shirtColor,
+            pantsColor: p.pantsColor,
+          },
+        });
         handlers.reconcilePlayer(id, p.x, p.y);
       });
     });
@@ -114,6 +140,9 @@ export async function connectGame(
       intentionalLeave = true;
       room?.leave();
       room = null;
+    },
+    getOnlinePlayers() {
+      return onlinePlayers;
     },
   };
 }
