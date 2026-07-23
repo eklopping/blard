@@ -6,12 +6,14 @@ export function BankPanel({
   token,
   apiBase,
   onRefresh,
+  embedded,
 }: {
   inventory: InventorySlotDto[];
   bank: InventorySlotDto[];
   token: string;
   apiBase: string;
   onRefresh: () => Promise<void>;
+  embedded?: boolean;
 }) {
   async function deposit(invSlot: number, quantity: number) {
     await fetch(`${apiBase}/player/bank/deposit`, {
@@ -38,11 +40,11 @@ export function BankPanel({
   }
 
   return (
-    <div className="panel">
+    <div className={embedded ? "hud-embed" : "panel"}>
       <h2>Bank</h2>
-      <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Click inv to deposit · bank to withdraw</p>
-      <h3 style={{ fontSize: "0.85rem" }}>Inventory</h3>
-      <div className="grid">
+      <p className="muted tiny-hint">Click inv to deposit · bank to withdraw</p>
+      <h3>Carried</h3>
+      <div className="grid grid-inv">
         {inventory.map((s) => (
           <div
             key={`i${s.slot}`}
@@ -53,8 +55,8 @@ export function BankPanel({
           </div>
         ))}
       </div>
-      <h3 style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>Bank</h3>
-      <div className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+      <h3>Stored</h3>
+      <div className="grid grid-bank">
         {bank.map((s) => (
           <div
             key={`b${s.slot}`}

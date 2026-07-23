@@ -264,6 +264,28 @@ export async function authRoutes(app: FastifyInstance) {
     };
   });
 
+  app.delete("/characters/:id", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const accountId = req.user.sub;
+    const { id } = req.params as { id: string };
+    const player = await prisma.player.findFirst({ where: { id, accountId } });
+    if (!player) return reply.code(404).send({ error: "character_not_found" });
+
+    await prisma.player.delete({ where: { id } });
+
+    // Compact sortOrder for remaining characters
+    const remaining = await prisma.player.findMany({
+      where: { accountId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    await prisma.$transaction(
+      remaining.map((p, index) =>
+        prisma.player.update({ where: { id: p.id }, data: { sortOrder: index } }),
+      ),
+    );
+
+    return { ok: true, deletedId: id };
+  });
+
   app.post("/characters/reorder", { preHandler: [app.authenticate] }, async (req, reply) => {
     const parsed = reorderSchema.safeParse(req.body);
     if (!parsed.success) {

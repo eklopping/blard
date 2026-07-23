@@ -98,7 +98,6 @@ export function CharacterSelectPanel({
     [ordered[idx], ordered[swap]] = [ordered[swap], ordered[idx]];
     const orderedIds = ordered.map((c) => c.id);
 
-    // Optimistic UI
     setData({
       ...data,
       characters: ordered.map((c, i) => ({ ...c, sortOrder: i })),
@@ -119,6 +118,26 @@ export function CharacterSelectPanel({
     } catch (e: any) {
       setError(e.message ?? String(e));
       await load().catch(() => undefined);
+    }
+  }
+
+  async function deleteCharacter(character: CharacterSummary) {
+    const ok = window.confirm(
+      `Delete profile “${character.name}”? This frees a slot and cannot be undone.`,
+    );
+    if (!ok) return;
+    setError(null);
+    try {
+      const r = await fetch(`${apiBase}/auth/characters/${character.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accountToken}` },
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error ?? "delete_failed");
+      if (renamingId === character.id) setRenamingId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
     }
   }
 
@@ -227,16 +246,25 @@ export function CharacterSelectPanel({
                         </button>
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        className="ghost tiny"
-                        onClick={() => {
-                          setRenamingId(ch.id);
-                          setRenameValue(ch.name);
-                        }}
-                      >
-                        Rename
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="ghost tiny"
+                          onClick={() => {
+                            setRenamingId(ch.id);
+                            setRenameValue(ch.name);
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost tiny danger-text"
+                          onClick={() => void deleteCharacter(ch)}
+                        >
+                          Delete
+                        </button>
+                      </>
                     )}
                   </div>
 

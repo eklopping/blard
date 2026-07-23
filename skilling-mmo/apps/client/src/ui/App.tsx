@@ -4,12 +4,10 @@ import type { GameBridge } from "../phaser/createGame";
 import { AuthPanel } from "./AuthPanel";
 import { CharacterSelectPanel } from "./CharacterSelectPanel";
 import { LobbyShell } from "./LobbyShell";
-import { InventoryPanel } from "./InventoryPanel";
-import { BankPanel } from "./BankPanel";
-import { MarketPanel } from "./MarketPanel";
+import { GameHud, type HudPanel } from "./GameHud";
 import { connectGame, type GameConnection } from "../net/colyseusClient";
 import type { InventorySlotDto, SkillProgressDto, CharacterAuthResponse } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
+import { DEFAULT_APPEARANCE } from "@skilling-mmo/shared";
 import {
   type GameSession,
   loadSession,
@@ -21,7 +19,7 @@ import {
   activeGameToken,
 } from "../session";
 
-type Panel = "inventory" | "bank" | "market" | null;
+type Panel = HudPanel;
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -171,7 +169,11 @@ export function App() {
       <div
         id="game-root"
         ref={gameHost}
-        className={inLobby || connecting || connectFailed ? "lobby-backdrop" : ""}
+        className={
+          inLobby || connecting || connectFailed
+            ? "lobby-backdrop"
+            : "with-hud"
+        }
       />
       <div id="ui-root">
         {!session ? (
@@ -198,64 +200,34 @@ export function App() {
             ) : null}
           </LobbyShell>
         ) : (
-          <>
-            <header className="hud-top">
-              <strong className="brand">Skilling MMO</strong>
-              <span className="muted">
-                {character.displayName} · {PROFESSION_LABELS[character.profession]}
-                {character.traits?.[0] && TRAIT_DEFS[character.traits[0]]
-                  ? ` · ${TRAIT_DEFS[character.traits[0]].name}`
-                  : ""}{" "}
-                · {coins}c · {status}
-              </span>
-              <nav>
-                <button type="button" onClick={() => setPanel("inventory")}>
-                  Inv
-                </button>
-                <button type="button" onClick={() => setPanel("bank")}>
-                  Bank
-                </button>
-                <button type="button" onClick={() => setPanel("market")}>
-                  Market
-                </button>
-                <button type="button" className="profiles-btn" onClick={switchCharacter}>
-                  Profiles
-                </button>
-                <button type="button" onClick={logoutAccount}>
-                  Log out
-                </button>
-              </nav>
-            </header>
-            <aside className="skills">
-              {skills.map((s) => (
-                <div key={s.skill}>
-                  {s.skill} {s.level} ({s.xp} xp)
-                </div>
-              ))}
-            </aside>
-            {panel === "inventory" && <InventoryPanel slots={inventory} />}
-            {panel === "bank" && (
-              <BankPanel
-                inventory={inventory}
-                bank={bank}
-                token={gameToken!}
-                apiBase={API}
-                onRefresh={async () => {
-                  await refreshBank();
-                  const r = await fetch(`${API}/player/inventory`, {
-                    headers: { Authorization: `Bearer ${gameToken}` },
-                  });
-                  if (r.ok) {
-                    const d = await r.json();
-                    setInventory(d.slots);
-                  }
-                }}
-              />
-            )}
-            {panel === "market" && (
-              <MarketPanel token={gameToken!} apiBase={API} coins={coins} />
-            )}
-          </>
+          <GameHud
+            displayName={character.displayName}
+            username={session.username}
+            profession={character.profession}
+            traits={character.traits ?? []}
+            appearance={character.appearance ?? DEFAULT_APPEARANCE}
+            coins={coins}
+            status={status}
+            skills={skills}
+            panel={panel}
+            onPanel={setPanel}
+            inventory={inventory}
+            bank={bank}
+            token={gameToken!}
+            apiBase={API}
+            onRefreshBank={async () => {
+              await refreshBank();
+              const r = await fetch(`${API}/player/inventory`, {
+                headers: { Authorization: `Bearer ${gameToken}` },
+              });
+              if (r.ok) {
+                const d = await r.json();
+                setInventory(d.slots);
+              }
+            }}
+            onProfiles={switchCharacter}
+            onLogout={logoutAccount}
+          />
         )}
       </div>
     </>

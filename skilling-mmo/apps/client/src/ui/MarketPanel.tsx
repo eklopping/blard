@@ -5,10 +5,12 @@ export function MarketPanel({
   token,
   apiBase,
   coins,
+  embedded,
 }: {
   token: string;
   apiBase: string;
   coins: number;
+  embedded?: boolean;
 }) {
   const [orders, setOrders] = useState<MarketOrderDto[]>([]);
   const [history, setHistory] = useState<any[]>([]);
@@ -53,8 +55,9 @@ export function MarketPanel({
   }
 
   return (
-    <div className="panel">
-      <h2>Marketplace · {coins}c</h2>
+    <div className={embedded ? "hud-embed" : "panel"}>
+      <h2>Marketplace</h2>
+      <p className="muted tiny-hint">{coins}c available</p>
       <div className="market-row">
         <select value={side} onChange={(e) => setSide(e.target.value as OrderSide)}>
           <option value="SELL">Sell</option>
