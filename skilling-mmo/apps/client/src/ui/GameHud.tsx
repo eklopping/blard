@@ -1,10 +1,20 @@
 import type { ReactNode } from "react";
-import type { InventorySlotDto, SkillProgressDto, Appearance, ProfessionId, TraitId } from "@skilling-mmo/shared";
+import type {
+  InventorySlotDto,
+  SkillProgressDto,
+  Appearance,
+  ProfessionId,
+  TraitId,
+  ChatMessageDto,
+  ChatInboxThreadDto,
+  PlayerSnapshot,
+} from "@skilling-mmo/shared";
 import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
 import { InventoryPanel } from "./InventoryPanel";
 import { BankPanel } from "./BankPanel";
 import { MarketPanel } from "./MarketPanel";
+import { ChatPanel } from "./ChatPanel";
 
 export type HudPanel = "inventory" | "bank" | "market";
 
@@ -26,6 +36,19 @@ export function GameHud({
   onRefreshBank,
   onProfiles,
   onLogout,
+  selfId,
+  chatMessages,
+  chatInbox,
+  mutedIds,
+  onlinePlayers,
+  chatError,
+  onSendPublic,
+  onSendDm,
+  onOpenThread,
+  onRefreshInbox,
+  onMutePlayer,
+  onUnmutePlayer,
+  onLoadPublicChat,
 }: {
   displayName: string;
   username: string;
@@ -44,6 +67,19 @@ export function GameHud({
   onRefreshBank: () => Promise<void>;
   onProfiles: () => void;
   onLogout: () => void;
+  selfId: string;
+  chatMessages: ChatMessageDto[];
+  chatInbox: ChatInboxThreadDto[];
+  mutedIds: Set<string>;
+  onlinePlayers: PlayerSnapshot[];
+  chatError: string;
+  onSendPublic: (body: string) => void;
+  onSendDm: (recipientId: string, body: string) => void;
+  onOpenThread: (threadKey: string, otherPlayerId: string) => void;
+  onRefreshInbox: () => void;
+  onMutePlayer: (playerId: string) => void;
+  onUnmutePlayer: (playerId: string) => void;
+  onLoadPublicChat: () => void;
 }) {
   const traitName =
     traits[0] && TRAIT_DEFS[traits[0]] ? TRAIT_DEFS[traits[0]].name : null;
@@ -129,6 +165,25 @@ export function GameHud({
               ))
           )}
         </ul>
+      </div>
+
+      <div className="hud-section hud-chat-section">
+        <h2>Chat</h2>
+        <ChatPanel
+          selfId={selfId}
+          messages={chatMessages}
+          inbox={chatInbox}
+          mutedIds={mutedIds}
+          onlinePlayers={onlinePlayers}
+          error={chatError}
+          onSendPublic={onSendPublic}
+          onSendDm={onSendDm}
+          onOpenThread={onOpenThread}
+          onRefreshInbox={onRefreshInbox}
+          onMute={onMutePlayer}
+          onUnmute={onUnmutePlayer}
+          onLoadPublic={onLoadPublicChat}
+        />
       </div>
 
       <div className="hud-section hud-panel-body">{body}</div>

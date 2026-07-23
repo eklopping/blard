@@ -4,6 +4,7 @@ import jwt from "@fastify/jwt";
 import { prisma } from "@skilling-mmo/db";
 import { authRoutes } from "./auth/routes.js";
 import { marketRoutes } from "./marketplace/routes.js";
+import { chatRoutes } from "./chat/routes.js";
 import { playerRoutes } from "./routes/player.js";
 import { getRedis, isRedisEnabled } from "./redis.js";
 import { OrderBook } from "./marketplace/orderBook.js";
@@ -61,6 +62,7 @@ async function main() {
   await app.register(authRoutes, { prefix: "/auth" });
   await app.register(playerRoutes, { prefix: "/player" });
   await app.register(marketRoutes, { prefix: "/market" });
+  await app.register(chatRoutes, { prefix: "/chat" });
 
   try {
     await prisma.$connect();

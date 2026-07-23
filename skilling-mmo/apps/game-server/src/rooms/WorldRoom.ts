@@ -5,16 +5,22 @@ import { Schema, type, MapSchema } from "@colyseus/schema";
 
 const { Room } = colyseus;
 import jwt from "jsonwebtoken";
-import { prisma, LedgerType } from "@skilling-mmo/db";
+import { prisma, LedgerType, ChatChannel } from "@skilling-mmo/db";
 import {
   TICK_MS,
   WOODCUTTING,
   SKILLS,
   levelFromXp,
+  CHAT_PUBLIC_RATE_MS,
+  CHAT_DM_RATE_MS,
+  validateChatBody,
+  dmThreadKey,
   type ClientMessage,
+  type ChatMessageDto,
 } from "@skilling-mmo/shared";
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
+import { ChatRateLimiter } from "../chat/rateLimit.js";
 // TODO: PvPMatchmaker enqueue(playerId) via Redis list when combat is added
 
 class PlayerState extends Schema {
@@ -64,6 +70,7 @@ export class WorldRoom extends Room<WorldState> {
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
+  private chatLimiter = new ChatRateLimiter();
 
   private appearanceOf(ps: PlayerState) {
     return {
@@ -210,6 +217,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerInventory.delete(playerId);
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
+    this.chatLimiter.clear(playerId);
   }
 
   onDispose() {
@@ -272,6 +280,107 @@ export class WorldRoom extends Room<WorldState> {
         ok: true,
         action: "woodcutting",
       });
+      return;
+    }
+
+    if (msg.type === "ChatPublic" || msg.type === "ChatDm") {
+      void this.handleChat(client, playerId, ps, msg);
+    }
+  }
+
+  private findClientByPlayerId(playerId: string): Client | undefined {
+    return this.clients.find((c) => (c as any).playerId === playerId);
+  }
+
+  private async handleChat(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    msg: ClientMessage & { type: "ChatPublic" | "ChatDm" },
+  ) {
+    const isDm = msg.type === "ChatDm";
+    if (!this.chatLimiter.allow(playerId, isDm ? "dm" : "public", isDm ? CHAT_DM_RATE_MS : CHAT_PUBLIC_RATE_MS)) {
+      client.send("ChatError", { type: "ChatError", error: "rate_limited" });
+      return;
+    }
+
+    const validated = validateChatBody(msg.body);
+    if (!validated.ok) {
+      client.send("ChatError", { type: "ChatError", error: validated.error });
+      return;
+    }
+
+    if (msg.type === "ChatPublic") {
+      try {
+        const row = await prisma.chatMessage.create({
+          data: {
+            channel: ChatChannel.PUBLIC,
+            senderId: playerId,
+            senderName: ps.name,
+            body: validated.body,
+          },
+        });
+        const message: ChatMessageDto = {
+          id: row.id,
+          channel: row.channel,
+          senderId: row.senderId,
+          senderName: row.senderName,
+          recipientId: row.recipientId,
+          threadKey: row.threadKey,
+          body: row.body,
+          createdAt: row.createdAt.toISOString(),
+        };
+        this.broadcast("ChatMessage", { type: "ChatMessage", message });
+      } catch (err) {
+        console.error("[WorldRoom] chat public failed", err);
+        client.send("ChatError", { type: "ChatError", error: "server_error" });
+      }
+      return;
+    }
+
+    // ChatDm
+    const recipientId = msg.recipientId;
+    if (recipientId === playerId) {
+      client.send("ChatError", { type: "ChatError", error: "dm_self" });
+      return;
+    }
+
+    try {
+      const recipient = await prisma.player.findUnique({ where: { id: recipientId } });
+      if (!recipient) {
+        client.send("ChatError", { type: "ChatError", error: "unknown_recipient" });
+        return;
+      }
+
+      const threadKey = dmThreadKey(playerId, recipientId);
+      const row = await prisma.chatMessage.create({
+        data: {
+          channel: ChatChannel.DIRECT,
+          senderId: playerId,
+          senderName: ps.name,
+          recipientId,
+          threadKey,
+          body: validated.body,
+        },
+      });
+      const message: ChatMessageDto = {
+        id: row.id,
+        channel: row.channel,
+        senderId: row.senderId,
+        senderName: row.senderName,
+        recipientId: row.recipientId,
+        threadKey: row.threadKey,
+        body: row.body,
+        createdAt: row.createdAt.toISOString(),
+      };
+      client.send("ChatMessage", { type: "ChatMessage", message });
+      const recipientClient = this.findClientByPlayerId(recipientId);
+      if (recipientClient) {
+        recipientClient.send("ChatMessage", { type: "ChatMessage", message });
+      }
+    } catch (err) {
+      console.error("[WorldRoom] chat dm failed", err);
+      client.send("ChatError", { type: "ChatError", error: "server_error" });
     }
   }
 
