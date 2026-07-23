@@ -1,4 +1,11 @@
-import type { AccountAuthResponse, CharacterAuthResponse, ProfessionId } from "@skilling-mmo/shared";
+import type {
+  AccountAuthResponse,
+  CharacterAuthResponse,
+  ProfessionId,
+  TraitId,
+  Appearance,
+} from "@skilling-mmo/shared";
+import { DEFAULT_APPEARANCE } from "@skilling-mmo/shared";
 
 const STORAGE_KEY = "skilling_session";
 
@@ -10,6 +17,8 @@ export interface GameSession {
     playerId: string;
     displayName: string;
     profession: ProfessionId;
+    traits: TraitId[];
+    appearance: Appearance;
   };
 }
 
@@ -51,6 +60,8 @@ export function applyCharacterAuth(
       playerId: res.playerId,
       displayName: res.displayName,
       profession: res.profession,
+      traits: res.traits ?? [],
+      appearance: res.appearance ?? DEFAULT_APPEARANCE,
     },
   };
   saveSession(next);
@@ -77,6 +88,8 @@ export function migrateLegacyAuth(): GameSession | null {
       playerId?: string;
       displayName?: string;
       profession?: ProfessionId;
+      traits?: TraitId[];
+      appearance?: Appearance;
     };
     localStorage.removeItem("skilling_auth");
     if (parsed.accessToken && parsed.username && parsed.playerId && parsed.displayName) {
@@ -88,6 +101,8 @@ export function migrateLegacyAuth(): GameSession | null {
           playerId: parsed.playerId,
           displayName: parsed.displayName,
           profession: parsed.profession ?? "woodsman",
+          traits: parsed.traits ?? [],
+          appearance: parsed.appearance ?? DEFAULT_APPEARANCE,
         },
       };
       saveSession(session);

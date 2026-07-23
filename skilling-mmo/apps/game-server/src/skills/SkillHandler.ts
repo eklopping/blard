@@ -1,9 +1,17 @@
-import { WOODCUTTING, SKILLS, type SkillId } from "@skilling-mmo/shared";
+import {
+  WOODCUTTING,
+  SKILLS,
+  applyActionSpeedTicks,
+  applyXpGain,
+  applyOutputQty,
+  type SkillId,
+} from "@skilling-mmo/shared";
 
 export interface SkillContext {
   playerId: string;
   x: number;
   y: number;
+  traits: string[];
   getSkill: (skill: SkillId) => { level: number; xp: number };
   getResource: (id: string) =>
     | { id: string; kind: string; x: number; y: number; available: boolean }
@@ -55,7 +63,10 @@ export class WoodcuttingHandler implements SkillHandler {
     if (skill.level < def.requiredLevel) {
       return { ok: false, reason: "level_too_low", ticksNeeded: 0 };
     }
-    return { ok: true, ticksNeeded: def.ticksToChop };
+    return {
+      ok: true,
+      ticksNeeded: applyActionSpeedTicks(def.ticksToChop, ctx.traits),
+    };
   }
 
   complete(ctx: SkillContext, resourceId: string): CompleteResult {
@@ -67,9 +78,9 @@ export class WoodcuttingHandler implements SkillHandler {
     return {
       ok: true,
       skill: SKILLS.WOODCUTTING,
-      xp: def.xp,
+      xp: applyXpGain(def.xp, ctx.traits),
       itemId: def.itemId,
-      itemQty: def.itemQty,
+      itemQty: applyOutputQty(def.itemQty, ctx.traits),
     };
   }
 }

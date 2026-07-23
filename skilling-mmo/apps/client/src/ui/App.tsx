@@ -9,7 +9,7 @@ import { BankPanel } from "./BankPanel";
 import { MarketPanel } from "./MarketPanel";
 import { connectGame, type GameConnection } from "../net/colyseusClient";
 import type { InventorySlotDto, SkillProgressDto, CharacterAuthResponse } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import {
   type GameSession,
   loadSession,
@@ -202,8 +202,11 @@ export function App() {
             <header className="hud-top">
               <strong className="brand">Skilling MMO</strong>
               <span className="muted">
-                {character.displayName} · {PROFESSION_LABELS[character.profession]} · {coins}c ·{" "}
-                {status}
+                {character.displayName} · {PROFESSION_LABELS[character.profession]}
+                {character.traits?.[0] && TRAIT_DEFS[character.traits[0]]
+                  ? ` · ${TRAIT_DEFS[character.traits[0]].name}`
+                  : ""}{" "}
+                · {coins}c · {status}
               </span>
               <nav>
                 <button type="button" onClick={() => setPanel("inventory")}>

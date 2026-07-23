@@ -1,5 +1,8 @@
 /** Skill / XP / item constants and client↔server protocol. */
 
+import type { TraitId } from "./traits.js";
+import type { Appearance } from "./avatar.js";
+
 export const TICK_MS = 600;
 
 export const MAX_CHARACTERS_PER_ACCOUNT = 3;
@@ -45,6 +48,36 @@ export const PROFESSION_STARTING_SKILLS: Record<ProfessionId, SkillId[]> = {
   [PROFESSIONS.FARMER]: [SKILLS.FARMING],
   [PROFESSIONS.MINER]: [SKILLS.MINING],
 };
+
+export {
+  TRAITS,
+  TRAIT_DEFS,
+  STARTER_TRAIT_IDS,
+  hasTrait,
+  applyActionSpeedTicks,
+  applyXpGain,
+  applyOutputQty,
+  type TraitId,
+  type TraitDef,
+} from "./traits.js";
+
+export {
+  DEFAULT_APPEARANCE,
+  HAIR_COLORS,
+  SKIN_COLORS,
+  SHIRT_COLORS,
+  PANTS_COLORS,
+  PIXEL_TEMPLATE,
+  PIXEL_W,
+  PIXEL_H,
+  EYE_COLOR,
+  BOOT_COLOR,
+  parseHex,
+  colorForPixel,
+  pixelAvatarRgba,
+  appearanceKey,
+  type Appearance,
+} from "./avatar.js";
 
 /** XP required to reach level (index = level). Level 1 starts with 0 XP. */
 export function xpForLevel(level: number): number {
@@ -122,6 +155,7 @@ export interface PlayerSnapshot {
   x: number;
   y: number;
   action?: string | null;
+  appearance?: Appearance;
 }
 
 export interface ResourceSnapshot {
@@ -138,6 +172,8 @@ export interface SelfSnapshot {
   skills: SkillProgressDto[];
   coins: number;
   profession?: ProfessionId;
+  traits?: TraitId[];
+  appearance?: Appearance;
 }
 
 export interface InventorySlotDto {
@@ -204,6 +240,8 @@ export interface CharacterAuthResponse {
   playerId: string;
   displayName: string;
   profession: ProfessionId;
+  traits: TraitId[];
+  appearance: Appearance;
 }
 
 export type AuthResponse = AccountAuthResponse | CharacterAuthResponse;
@@ -220,6 +258,8 @@ export interface CharacterSummary {
   profession: ProfessionId;
   coins: number;
   createdAt: string;
+  traits: TraitId[];
+  appearance: Appearance;
 }
 
 export interface CharacterListResponse {
@@ -231,6 +271,8 @@ export interface CharacterListResponse {
 export interface CreateCharacterRequest {
   name: string;
   profession: ProfessionId;
+  trait: TraitId;
+  appearance: Appearance;
 }
 
 export interface SelectCharacterRequest {

@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { DEFAULT_APPEARANCE } from "@skilling-mmo/shared";
+import { ensurePlayerTexture } from "./playerTexture";
 
 /** Generate placeholder tileset + sprites at runtime (no external art). */
 export class BootScene extends Phaser.Scene {
@@ -7,7 +9,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    // procedural textures
     const g = this.make.graphics({ x: 0, y: 0 }, false);
 
     g.fillStyle(0x3d6b3d);
@@ -23,17 +24,10 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0x2d6a2d);
     g.fillCircle(16, 14, 14);
     g.generateTexture("tree", 32, 48);
-    g.clear();
-
-    g.fillStyle(0xc4a35a);
-    g.fillCircle(12, 12, 10);
-    g.fillStyle(0x3a2a10);
-    g.fillCircle(8, 10, 2);
-    g.fillCircle(14, 10, 2);
-    g.generateTexture("player", 24, 24);
     g.destroy();
 
-    // Minimal Tiled JSON map (embedded)
+    ensurePlayerTexture(this, DEFAULT_APPEARANCE);
+
     const map = {
       width: 40,
       height: 30,

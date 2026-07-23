@@ -336,6 +336,105 @@ button.ghost {
   --accent: #8aa4c4;
 }
 
+.create-card-wide {
+  width: min(920px, 96vw);
+}
+
+.create-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .create-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.create-preview-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.avatar-stage {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  image-rendering: pixelated;
+}
+
+.pixel-avatar-preview {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.color-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.color-row-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-swatch.selected {
+  border-color: var(--accent);
+  outline: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.trait-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.trait-card {
+  text-align: left;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: var(--font-ui);
+}
+
+.trait-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: rgba(196, 163, 90, 0.1);
+}
+
+.character-slot .pixel-avatar-preview {
+  margin-bottom: 0.25rem;
+}
+
 #game-root.lobby-backdrop {
   filter: blur(2px) brightness(0.35);
 }

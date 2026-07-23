@@ -1,7 +1,8 @@
 import Phaser from "phaser";
-import { WOODCUTTING } from "@skilling-mmo/shared";
+import { WOODCUTTING, DEFAULT_APPEARANCE, type Appearance } from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
+import { ensurePlayerTexture } from "./playerTexture";
 
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
@@ -29,15 +30,11 @@ export class WorldScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.setBackgroundColor("#1a2e1a");
+    this.cameras.main.setRoundPixels(true);
 
-    this.tree = this.add.image(
-      WOODCUTTING.NORMAL_TREE.resourceId === "tree_normal" ? 320 : 320,
-      240,
-      "tree",
-    );
+    this.tree = this.add.image(320, 240, "tree");
     this.tree.setInteractive({ useHandCursor: true });
     this.tree.on("pointerdown", () => {
-      // Predict walk toward tree then interact
       if (this.localPlayer) {
         this.predictedTarget = { x: this.tree!.x - 24, y: this.tree!.y };
         this.callbacks.onMove(this.predictedTarget.x, this.predictedTarget.y);
@@ -81,7 +78,14 @@ export class WorldScene extends Phaser.Scene {
   applySnapshot(snap: Extract<ServerMessage, { type: "StateSnapshot" }>) {
     this.localId = snap.you.playerId;
     for (const p of snap.players) {
-      this.ensurePlayer(p.id, p.name, p.x, p.y, p.id === this.localId);
+      this.ensurePlayer(
+        p.id,
+        p.name,
+        p.x,
+        p.y,
+        p.id === this.localId,
+        p.appearance ?? snap.you.appearance ?? DEFAULT_APPEARANCE,
+      );
     }
     for (const r of snap.resources) {
       if (r.kind === "tree" && this.tree) {
@@ -95,7 +99,6 @@ export class WorldScene extends Phaser.Scene {
     const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
     if (!sprite) return;
     if (id === this.localId) {
-      // Soft reconcile — snap if far from prediction
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
       if (dist > 64) {
         sprite.setPosition(x, y);
@@ -136,10 +139,19 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private ensurePlayer(id: string, _name: string, x: number, y: number, isLocal: boolean) {
+  private ensurePlayer(
+    id: string,
+    _name: string,
+    x: number,
+    y: number,
+    isLocal: boolean,
+    look: Appearance,
+  ) {
+    const key = ensurePlayerTexture(this, look);
     let sprite = this.remotePlayers.get(id);
     if (!sprite) {
-      sprite = this.add.image(x, y, "player");
+      sprite = this.add.image(x, y, key);
+      sprite.setOrigin(0.5, 1);
       sprite.setDepth(10);
       this.remotePlayers.set(id, sprite);
       if (isLocal) {
@@ -147,6 +159,7 @@ export class WorldScene extends Phaser.Scene {
         this.cameras.main.startFollow(sprite, true, 0.12, 0.12);
       }
     } else {
+      if (sprite.texture.key !== key) sprite.setTexture(key);
       sprite.setPosition(x, y);
     }
   }

@@ -23,6 +23,10 @@ class PlayerState extends Schema {
   @type("number") x: number = 0;
   @type("number") y: number = 0;
   @type("string") action: string = "";
+  @type("string") hairColor: string = "#1a1a1a";
+  @type("string") skinColor: string = "#e899a3";
+  @type("string") shirtColor: string = "#0f1e3d";
+  @type("string") pantsColor: string = "#4b250a";
 }
 
 class ResourceState extends Schema {
@@ -59,7 +63,27 @@ export class WorldRoom extends Room<WorldState> {
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
+  private playerTraits = new Map<string, string[]>();
 
+  private appearanceOf(ps: PlayerState) {
+    return {
+      hairColor: ps.hairColor,
+      skinColor: ps.skinColor,
+      shirtColor: ps.shirtColor,
+      pantsColor: ps.pantsColor,
+    };
+  }
+
+  private snapshotPlayers() {
+    return [...this.state.players.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      x: p.x,
+      y: p.y,
+      action: p.action || null,
+      appearance: this.appearanceOf(p),
+    }));
+  }
   async onAuth(_client: Client, options: { token?: string }): Promise<SessionData> {
     const token = options?.token;
     if (!token) throw new Error("missing_token");
@@ -119,6 +143,10 @@ export class WorldRoom extends Room<WorldState> {
     ps.x = player.x;
     ps.y = player.y;
     ps.action = "";
+    ps.hairColor = player.hairColor;
+    ps.skinColor = player.skinColor;
+    ps.shirtColor = player.shirtColor;
+    ps.pantsColor = player.pantsColor;
     this.state.players.set(player.id, ps);
     (client as any).playerId = player.id;
 
@@ -135,16 +163,11 @@ export class WorldRoom extends Room<WorldState> {
       player.inventory.map((s) => ({ slot: s.slot, itemId: s.itemId, quantity: s.quantity })),
     );
     this.playerCoins.set(player.id, player.coins);
+    this.playerTraits.set(player.id, player.traits ?? []);
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
-      players: [...this.state.players.values()].map((p) => ({
-        id: p.id,
-        name: p.name,
-        x: p.x,
-        y: p.y,
-        action: p.action || null,
-      })),
+      players: this.snapshotPlayers(),
       resources: [...this.state.resources.values()].map((r) => ({
         id: r.id,
         kind: r.kind,
@@ -161,6 +184,8 @@ export class WorldRoom extends Room<WorldState> {
           xp: v.xp,
         })),
         coins: player.coins,
+        traits: player.traits,
+        appearance: this.appearanceOf(ps),
       },
     });
   }
@@ -184,6 +209,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerSkills.delete(playerId);
     this.playerInventory.delete(playerId);
     this.playerCoins.delete(playerId);
+    this.playerTraits.delete(playerId);
   }
 
   onDispose() {
@@ -254,6 +280,7 @@ export class WorldRoom extends Room<WorldState> {
       playerId,
       x: ps.x,
       y: ps.y,
+      traits: this.playerTraits.get(playerId) ?? [],
       getSkill: (skill) => this.playerSkills.get(playerId)?.get(skill) ?? { level: 1, xp: 0 },
       getResource: (id) => {
         const r = this.state.resources.get(id);

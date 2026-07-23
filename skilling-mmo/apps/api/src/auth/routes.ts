@@ -7,10 +7,15 @@ import {
   MAX_CHARACTERS_PER_ACCOUNT,
   PROFESSIONS,
   PROFESSION_STARTING_SKILLS,
+  DEFAULT_APPEARANCE,
   type ProfessionId,
   type SkillId,
+  type TraitId,
+  type Appearance,
 } from "@skilling-mmo/shared";
 import { z } from "zod";
+
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
 const credsSchema = z.object({
   username: z.string().min(3).max(32).regex(/^[a-zA-Z0-9_]+$/),
@@ -20,6 +25,15 @@ const credsSchema = z.object({
 const createCharacterSchema = z.object({
   name: z.string().min(1).max(24).regex(/^[a-zA-Z0-9 _-]+$/),
   profession: z.enum([PROFESSIONS.WOODSMAN, PROFESSIONS.FARMER, PROFESSIONS.MINER]),
+  trait: z.enum(["quick_thinking", "single_minded", "steadfast_focus"]),
+  appearance: z
+    .object({
+      hairColor: hexColor,
+      skinColor: hexColor,
+      shirtColor: hexColor,
+      pantsColor: hexColor,
+    })
+    .default(DEFAULT_APPEARANCE),
 });
 
 const selectCharacterSchema = z.object({
@@ -39,13 +53,42 @@ function startingSkills(profession: ProfessionId): SkillId[] {
   return [...profSkills];
 }
 
-async function createPlayerForAccount(accountId: string, name: string, profession: ProfessionId) {
+function appearanceOf(player: {
+  hairColor: string;
+  skinColor: string;
+  shirtColor: string;
+  pantsColor: string;
+}): Appearance {
+  return {
+    hairColor: player.hairColor,
+    skinColor: player.skinColor,
+    shirtColor: player.shirtColor,
+    pantsColor: player.pantsColor,
+  };
+}
+
+function traitsOf(player: { traits: string[] }): TraitId[] {
+  return player.traits as TraitId[];
+}
+
+async function createPlayerForAccount(
+  accountId: string,
+  name: string,
+  profession: ProfessionId,
+  trait: TraitId,
+  appearance: Appearance,
+) {
   const skills = startingSkills(profession);
   const player = await prisma.player.create({
     data: {
       accountId,
       name,
       profession: toPrismaProfession(profession),
+      traits: [trait],
+      hairColor: appearance.hairColor,
+      skinColor: appearance.skinColor,
+      shirtColor: appearance.shirtColor,
+      pantsColor: appearance.pantsColor,
       coins: 100,
       x: 160,
       y: 160,
@@ -89,6 +132,31 @@ function signCharacterToken(
     },
     { expiresIn: "7d" },
   );
+}
+
+function characterAuthPayload(
+  account: { username: string },
+  player: {
+    id: string;
+    name: string;
+    profession: Profession;
+    traits: string[];
+    hairColor: string;
+    skinColor: string;
+    shirtColor: string;
+    pantsColor: string;
+  },
+  accessToken: string,
+) {
+  return {
+    accessToken,
+    username: account.username,
+    playerId: player.id,
+    displayName: player.name,
+    profession: fromPrismaProfession(player.profession),
+    traits: traitsOf(player),
+    appearance: appearanceOf(player),
+  };
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -141,13 +209,6 @@ export async function authRoutes(app: FastifyInstance) {
     const players = await prisma.player.findMany({
       where: { accountId },
       orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        name: true,
-        profession: true,
-        coins: true,
-        createdAt: true,
-      },
     });
 
     return {
@@ -157,6 +218,8 @@ export async function authRoutes(app: FastifyInstance) {
         profession: fromPrismaProfession(p.profession),
         coins: p.coins,
         createdAt: p.createdAt.toISOString(),
+        traits: traitsOf(p),
+        appearance: appearanceOf(p),
       })),
       maxCharacters: MAX_CHARACTERS_PER_ACCOUNT,
       slotsRemaining: Math.max(0, MAX_CHARACTERS_PER_ACCOUNT - players.length),
@@ -169,24 +232,24 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "invalid_payload", details: parsed.error.flatten() });
     }
     const accountId = req.user.sub;
-    const { name, profession } = parsed.data;
+    const { name, profession, trait, appearance } = parsed.data;
 
     const count = await prisma.player.count({ where: { accountId } });
     if (count >= MAX_CHARACTERS_PER_ACCOUNT) {
       return reply.code(409).send({ error: "character_limit_reached" });
     }
 
-    const player = await createPlayerForAccount(accountId, name.trim(), profession);
+    const player = await createPlayerForAccount(
+      accountId,
+      name.trim(),
+      profession,
+      trait,
+      appearance,
+    );
     const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     const accessToken = await signCharacterToken(reply, account, player);
 
-    return {
-      accessToken,
-      username: account.username,
-      playerId: player.id,
-      displayName: player.name,
-      profession: fromPrismaProfession(player.profession),
-    };
+    return characterAuthPayload(account, player, accessToken);
   });
 
   app.post("/select", { preHandler: [app.authenticate] }, async (req, reply) => {
@@ -205,13 +268,7 @@ export async function authRoutes(app: FastifyInstance) {
     const account = await prisma.account.findUniqueOrThrow({ where: { id: accountId } });
     const accessToken = await signCharacterToken(reply, account, player);
 
-    return {
-      accessToken,
-      username: account.username,
-      playerId: player.id,
-      displayName: player.name,
-      profession: fromPrismaProfession(player.profession),
-    };
+    return characterAuthPayload(account, player, accessToken);
   });
 
   app.get("/me", { preHandler: [app.authenticateCharacter] }, async (req) => {
@@ -229,6 +286,8 @@ export async function authRoutes(app: FastifyInstance) {
       player: {
         ...player,
         profession: fromPrismaProfession(player.profession),
+        traits: traitsOf(player),
+        appearance: appearanceOf(player),
       },
     };
   });

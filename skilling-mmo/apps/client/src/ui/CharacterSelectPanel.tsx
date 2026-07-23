@@ -7,6 +7,8 @@ import type {
 import { PROFESSION_LABELS } from "@skilling-mmo/shared";
 import { CharacterCreatePanel } from "./CharacterCreatePanel";
 import { LobbyShell } from "./LobbyShell";
+import { PixelAvatarPreview } from "./PixelAvatarPreview";
+import { DEFAULT_APPEARANCE, TRAIT_DEFS } from "@skilling-mmo/shared";
 
 export function CharacterSelectPanel({
   apiBase,
@@ -106,9 +108,18 @@ export function CharacterSelectPanel({
                   disabled={busyId === ch.id}
                   onClick={() => void selectCharacter(ch)}
                 >
+                  <PixelAvatarPreview
+                    appearance={ch.appearance ?? DEFAULT_APPEARANCE}
+                    scale={3}
+                  />
                   <span className="slot-label">{PROFESSION_LABELS[ch.profession]}</span>
                   <strong>{ch.name}</strong>
-                  <span className="slot-meta">{ch.coins}c</span>
+                  <span className="slot-meta">
+                    {ch.coins}c
+                    {ch.traits?.[0] && TRAIT_DEFS[ch.traits[0]]
+                      ? ` · ${TRAIT_DEFS[ch.traits[0]].name}`
+                      : ""}
+                  </span>
                   <span className="slot-action">
                     {busyId === ch.id ? "Entering…" : "Play"}
                   </span>

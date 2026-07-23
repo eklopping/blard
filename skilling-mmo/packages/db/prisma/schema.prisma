@@ -23,6 +23,12 @@ model Player {
   account    Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
   name       String
   profession Profession @default(WOODSMAN)
+  /// Trait ids (starter + future achievement unlocks)
+  traits     String[]   @default([])
+  hairColor  String     @default("#1a1a1a")
+  skinColor  String     @default("#e899a3")
+  shirtColor String     @default("#0f1e3d")
+  pantsColor String     @default("#4b250a")
   coins      Int        @default(100)
   x          Float      @default(160)
   y          Float      @default(160)
