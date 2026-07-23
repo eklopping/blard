@@ -192,7 +192,7 @@ export function App() {
                   {status}
                 </p>
                 <button type="button" className="primary" onClick={switchCharacter}>
-                  Back to characters
+                  Back to profiles
                 </button>
               </div>
             ) : null}
@@ -218,8 +218,8 @@ export function App() {
                 <button type="button" onClick={() => setPanel("market")}>
                   Market
                 </button>
-                <button type="button" onClick={switchCharacter}>
-                  Characters
+                <button type="button" className="profiles-btn" onClick={switchCharacter}>
+                  Profiles
                 </button>
                 <button type="button" onClick={logoutAccount}>
                   Log out

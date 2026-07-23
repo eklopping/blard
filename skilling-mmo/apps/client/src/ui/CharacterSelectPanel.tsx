@@ -4,11 +4,10 @@ import type {
   CharacterListResponse,
   CharacterSummary,
 } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS, DEFAULT_APPEARANCE, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { CharacterCreatePanel } from "./CharacterCreatePanel";
 import { LobbyShell } from "./LobbyShell";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
-import { DEFAULT_APPEARANCE, TRAIT_DEFS } from "@skilling-mmo/shared";
 
 export function CharacterSelectPanel({
   apiBase,
@@ -27,6 +26,8 @@ export function CharacterSelectPanel({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   async function load() {
     setError(null);
@@ -64,6 +65,63 @@ export function CharacterSelectPanel({
     }
   }
 
+  async function saveRename(id: string) {
+    const name = renameValue.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      const r = await fetch(`${apiBase}/auth/characters/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accountToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error ?? "rename_failed");
+      setRenamingId(null);
+      await load();
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    }
+  }
+
+  async function moveCharacter(id: string, direction: -1 | 1) {
+    if (!data) return;
+    const list = [...data.characters];
+    const idx = list.findIndex((c) => c.id === id);
+    const swap = idx + direction;
+    if (idx < 0 || swap < 0 || swap >= list.length) return;
+
+    const ordered = [...list];
+    [ordered[idx], ordered[swap]] = [ordered[swap], ordered[idx]];
+    const orderedIds = ordered.map((c) => c.id);
+
+    // Optimistic UI
+    setData({
+      ...data,
+      characters: ordered.map((c, i) => ({ ...c, sortOrder: i })),
+    });
+
+    try {
+      const r = await fetch(`${apiBase}/auth/characters/reorder`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accountToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ orderedIds }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error ?? "reorder_failed");
+      setData(body as CharacterListResponse);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+      await load().catch(() => undefined);
+    }
+  }
+
   if (creating) {
     return (
       <CharacterCreatePanel
@@ -88,8 +146,8 @@ export function CharacterSelectPanel({
       <div className="lobby-card character-card">
         <div className="lobby-header">
           <div>
-            <h1>Select character</h1>
-            <p className="muted">Account: {username}</p>
+            <h1>Profiles</h1>
+            <p className="muted">Account: {username} · rename, reorder, then play</p>
           </div>
           <button type="button" className="ghost" onClick={onLogout}>
             Log out
@@ -100,30 +158,97 @@ export function CharacterSelectPanel({
           {Array.from({ length: max }).map((_, i) => {
             const ch = slots[i];
             if (ch) {
+              const isRenaming = renamingId === ch.id;
               return (
-                <button
-                  key={ch.id}
-                  type="button"
-                  className={`character-slot filled profession-${ch.profession}`}
-                  disabled={busyId === ch.id}
-                  onClick={() => void selectCharacter(ch)}
-                >
+                <div key={ch.id} className={`character-slot filled profession-${ch.profession}`}>
                   <PixelAvatarPreview
                     appearance={ch.appearance ?? DEFAULT_APPEARANCE}
                     scale={3}
                   />
                   <span className="slot-label">{PROFESSION_LABELS[ch.profession]}</span>
-                  <strong>{ch.name}</strong>
+
+                  {isRenaming ? (
+                    <input
+                      className="rename-input"
+                      value={renameValue}
+                      maxLength={24}
+                      autoFocus
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveRename(ch.id);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                    />
+                  ) : (
+                    <strong>{ch.name}</strong>
+                  )}
+
                   <span className="slot-meta">
                     {ch.coins}c
                     {ch.traits?.[0] && TRAIT_DEFS[ch.traits[0]]
                       ? ` · ${TRAIT_DEFS[ch.traits[0]].name}`
                       : ""}
                   </span>
-                  <span className="slot-action">
+
+                  <div className="slot-manage" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      className="ghost tiny"
+                      disabled={i === 0}
+                      title="Move left"
+                      onClick={() => void moveCharacter(ch.id, -1)}
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost tiny"
+                      disabled={i >= slots.length - 1}
+                      title="Move right"
+                      onClick={() => void moveCharacter(ch.id, 1)}
+                    >
+                      →
+                    </button>
+                    {isRenaming ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ghost tiny"
+                          onClick={() => void saveRename(ch.id)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost tiny"
+                          onClick={() => setRenamingId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="ghost tiny"
+                        onClick={() => {
+                          setRenamingId(ch.id);
+                          setRenameValue(ch.name);
+                        }}
+                      >
+                        Rename
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="primary slot-play"
+                    disabled={busyId === ch.id || isRenaming}
+                    onClick={() => void selectCharacter(ch)}
+                  >
                     {busyId === ch.id ? "Entering…" : "Play"}
-                  </span>
-                </button>
+                  </button>
+                </div>
               );
             }
             return (

@@ -40,6 +40,14 @@ const selectCharacterSchema = z.object({
   playerId: z.string().min(1),
 });
 
+const renameCharacterSchema = z.object({
+  name: z.string().min(1).max(24).regex(/^[a-zA-Z0-9 _-]+$/),
+});
+
+const reorderSchema = z.object({
+  orderedIds: z.array(z.string().min(1)).min(1).max(MAX_CHARACTERS_PER_ACCOUNT),
+});
+
 function toPrismaProfession(profession: ProfessionId): Profession {
   return profession.toUpperCase() as Profession;
 }
@@ -79,6 +87,7 @@ async function createPlayerForAccount(
   appearance: Appearance,
 ) {
   const skills = startingSkills(profession);
+  const existingCount = await prisma.player.count({ where: { accountId } });
   const player = await prisma.player.create({
     data: {
       accountId,
@@ -89,6 +98,7 @@ async function createPlayerForAccount(
       skinColor: appearance.skinColor,
       shirtColor: appearance.shirtColor,
       pantsColor: appearance.pantsColor,
+      sortOrder: existingCount,
       coins: 100,
       x: 160,
       y: 160,
@@ -208,7 +218,7 @@ export async function authRoutes(app: FastifyInstance) {
     const accountId = req.user.sub;
     const players = await prisma.player.findMany({
       where: { accountId },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
 
     return {
@@ -218,11 +228,83 @@ export async function authRoutes(app: FastifyInstance) {
         profession: fromPrismaProfession(p.profession),
         coins: p.coins,
         createdAt: p.createdAt.toISOString(),
+        sortOrder: p.sortOrder,
         traits: traitsOf(p),
         appearance: appearanceOf(p),
       })),
       maxCharacters: MAX_CHARACTERS_PER_ACCOUNT,
       slotsRemaining: Math.max(0, MAX_CHARACTERS_PER_ACCOUNT - players.length),
+    };
+  });
+
+  app.patch("/characters/:id", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const parsed = renameCharacterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const accountId = req.user.sub;
+    const { id } = req.params as { id: string };
+    const player = await prisma.player.findFirst({ where: { id, accountId } });
+    if (!player) return reply.code(404).send({ error: "character_not_found" });
+
+    const updated = await prisma.player.update({
+      where: { id },
+      data: { name: parsed.data.name.trim() },
+    });
+
+    return {
+      id: updated.id,
+      name: updated.name,
+      profession: fromPrismaProfession(updated.profession),
+      coins: updated.coins,
+      createdAt: updated.createdAt.toISOString(),
+      sortOrder: updated.sortOrder,
+      traits: traitsOf(updated),
+      appearance: appearanceOf(updated),
+    };
+  });
+
+  app.post("/characters/reorder", { preHandler: [app.authenticate] }, async (req, reply) => {
+    const parsed = reorderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const accountId = req.user.sub;
+    const { orderedIds } = parsed.data;
+
+    const players = await prisma.player.findMany({ where: { accountId } });
+    if (orderedIds.length !== players.length) {
+      return reply.code(400).send({ error: "reorder_mismatch" });
+    }
+    const owned = new Set(players.map((p) => p.id));
+    if (!orderedIds.every((id) => owned.has(id))) {
+      return reply.code(400).send({ error: "reorder_invalid_ids" });
+    }
+
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.player.update({ where: { id }, data: { sortOrder: index } }),
+      ),
+    );
+
+    const refreshed = await prisma.player.findMany({
+      where: { accountId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+
+    return {
+      characters: refreshed.map((p) => ({
+        id: p.id,
+        name: p.name,
+        profession: fromPrismaProfession(p.profession),
+        coins: p.coins,
+        createdAt: p.createdAt.toISOString(),
+        sortOrder: p.sortOrder,
+        traits: traitsOf(p),
+        appearance: appearanceOf(p),
+      })),
+      maxCharacters: MAX_CHARACTERS_PER_ACCOUNT,
+      slotsRemaining: Math.max(0, MAX_CHARACTERS_PER_ACCOUNT - refreshed.length),
     };
   });
 

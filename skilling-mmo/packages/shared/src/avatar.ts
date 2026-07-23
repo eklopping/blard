@@ -54,7 +54,7 @@ export const PANTS_COLORS = [
 
 /**
  * Pixel keys:
- * . empty  H hair  E eye  S skin  T shirt  P pants  B boot
+ * . empty  H hair  E eye  S skin  T shirt  P pants  L legs (skin)
  */
 export const PIXEL_TEMPLATE: string[] = [
   ".HHHHH.",
@@ -68,15 +68,14 @@ export const PIXEL_TEMPLATE: string[] = [
   ".PPPPP.",
   ".PPPPP.",
   ".PPPPP.",
-  ".B...B.",
-  ".B...B.",
-  ".B...B.",
+  ".L...L.",
+  ".L...L.",
+  ".L...L.",
 ];
 
 export const PIXEL_W = 7;
 export const PIXEL_H = 14;
 export const EYE_COLOR = "#6b5344";
-export const BOOT_COLOR = "#0a0a0a";
 
 export function parseHex(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
@@ -90,6 +89,7 @@ export function colorForPixel(ch: string, look: Appearance): string | null {
     case "H":
       return look.hairColor;
     case "S":
+    case "L":
       return look.skinColor;
     case "E":
       return EYE_COLOR;
@@ -97,8 +97,6 @@ export function colorForPixel(ch: string, look: Appearance): string | null {
       return look.shirtColor;
     case "P":
       return look.pantsColor;
-    case "B":
-      return BOOT_COLOR;
     default:
       return null;
   }

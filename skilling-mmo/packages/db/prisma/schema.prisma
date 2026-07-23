@@ -29,6 +29,8 @@ model Player {
   skinColor  String     @default("#e899a3")
   shirtColor String     @default("#0f1e3d")
   pantsColor String     @default("#4b250a")
+  /// Display order in profile selector (lower = earlier)
+  sortOrder  Int        @default(0)
   coins      Int        @default(100)
   x          Float      @default(160)
   y          Float      @default(160)

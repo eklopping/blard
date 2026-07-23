@@ -71,7 +71,6 @@ export {
   PIXEL_W,
   PIXEL_H,
   EYE_COLOR,
-  BOOT_COLOR,
   parseHex,
   colorForPixel,
   pixelAvatarRgba,
@@ -258,6 +257,7 @@ export interface CharacterSummary {
   profession: ProfessionId;
   coins: number;
   createdAt: string;
+  sortOrder: number;
   traits: TraitId[];
   appearance: Appearance;
 }
@@ -273,6 +273,14 @@ export interface CreateCharacterRequest {
   profession: ProfessionId;
   trait: TraitId;
   appearance: Appearance;
+}
+
+export interface RenameCharacterRequest {
+  name: string;
+}
+
+export interface ReorderCharactersRequest {
+  orderedIds: string[];
 }
 
 export interface SelectCharacterRequest {

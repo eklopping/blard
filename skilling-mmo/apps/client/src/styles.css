@@ -475,6 +475,55 @@ button.ghost {
   color: #1a1a12;
 }
 
+.hud-top button.profiles-btn {
+  background: var(--accent);
+  color: #1a1a12;
+  font-weight: 600;
+}
+
+.slot-manage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+  width: 100%;
+}
+
+button.ghost.tiny,
+.ghost.tiny {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.7rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+button.ghost.tiny:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.rename-input {
+  width: 100%;
+  margin: 0.15rem 0;
+  padding: 0.3rem 0.4rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--accent);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+}
+
+.slot-play {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.character-slot.filled {
+  cursor: default;
+}
+
 .skills {
   position: absolute;
   top: 3rem;
