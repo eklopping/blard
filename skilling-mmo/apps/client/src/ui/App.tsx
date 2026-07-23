@@ -78,6 +78,19 @@ export function App() {
     selfIdRef.current = selfId;
   }, [selfId]);
 
+  const resetChatState = useCallback(() => {
+    chatModeRef.current = "public";
+    activeThreadKeyRef.current = null;
+    mutedRef.current = new Set();
+    setChatMessages([]);
+    setChatInbox([]);
+    setMutedIds(new Set());
+    setChatError("");
+    setChatMode("public");
+    setActiveThreadKey(null);
+    setOnlinePlayers([]);
+  }, []);
+
   const onAccountAuth = useCallback((res: Parameters<typeof applyAccountAuth>[0]) => {
     setSession(applyAccountAuth(res));
   }, []);
@@ -95,7 +108,8 @@ export function App() {
     conn.current?.leave();
     conn.current = null;
     setStatus("logged out");
-  }, []);
+    resetChatState();
+  }, [resetChatState]);
 
   const switchCharacter = useCallback(() => {
     setSession((prev) => {
@@ -105,7 +119,8 @@ export function App() {
       setStatus("idle");
       return clearCharacter(prev);
     });
-  }, []);
+    resetChatState();
+  }, [resetChatState]);
 
   const refreshBank = useCallback(async () => {
     if (!gameToken) return;
@@ -131,14 +146,22 @@ export function App() {
 
   const loadPublic = useCallback(async () => {
     if (!gameToken) return;
+    // Switch mode/refs synchronously before the async fetch so any chat
+    // message received while this request is in flight is filtered against
+    // the *new* view instead of the stale one (thread-open race fix).
+    chatModeRef.current = "public";
+    activeThreadKeyRef.current = null;
+    setChatMode("public");
+    setActiveThreadKey(null);
+    setChatMessages([]);
     const r = await fetch(`${API}/chat/public`, {
       headers: { Authorization: `Bearer ${gameToken}` },
     });
     if (r.ok) {
       const data = await r.json();
-      setChatMode("public");
-      setActiveThreadKey(null);
-      setChatMessages(data.messages);
+      if (chatModeRef.current === "public") {
+        setChatMessages(data.messages);
+      }
     }
   }, [gameToken]);
 
@@ -153,13 +176,23 @@ export function App() {
   const loadThread = useCallback(
     async (threadKey: string) => {
       if (!gameToken) return;
+      // Same synchronous switch as loadPublic — set mode/thread/refs and
+      // clear stale messages before awaiting the fetch.
+      chatModeRef.current = "dm";
+      activeThreadKeyRef.current = threadKey;
+      setChatMode("dm");
+      setActiveThreadKey(threadKey);
+      setChatMessages([]);
       const r = await fetch(`${API}/chat/dm/${encodeURIComponent(threadKey)}`, {
         headers: { Authorization: `Bearer ${gameToken}` },
       });
       if (r.ok) {
-        setChatMode("dm");
-        setActiveThreadKey(threadKey);
-        setChatMessages((await r.json()).messages);
+        const data = await r.json();
+        // Guard against a late response landing after the user switched
+        // to a different thread/view in the meantime.
+        if (activeThreadKeyRef.current === threadKey) {
+          setChatMessages(data.messages);
+        }
       }
     },
     [gameToken],
@@ -228,6 +261,10 @@ export function App() {
   useEffect(() => {
     if (!gameToken) return;
     let cancelled = false;
+    // Fresh connect (new character / reconnect) — drop any previous
+    // character's chat state before loads complete instead of leaving
+    // stale messages/threads visible during the connect.
+    resetChatState();
 
     (async () => {
       setStatus("connecting…");
