@@ -298,8 +298,8 @@ export class WorldRoom extends Room<WorldState> {
     ps: PlayerState,
     msg: ClientMessage & { type: "ChatPublic" | "ChatDm" },
   ) {
-    const rateMs = msg.type === "ChatPublic" ? CHAT_PUBLIC_RATE_MS : CHAT_DM_RATE_MS;
-    if (!this.chatLimiter.allow(playerId, rateMs)) {
+    const isDm = msg.type === "ChatDm";
+    if (!this.chatLimiter.allow(playerId, isDm ? "dm" : "public", isDm ? CHAT_DM_RATE_MS : CHAT_PUBLIC_RATE_MS)) {
       client.send("ChatError", { type: "ChatError", error: "rate_limited" });
       return;
     }
