@@ -9,6 +9,7 @@ import type {
   ChatInboxThreadDto,
   PlayerSnapshot,
   EquipmentLoadout,
+  ItemLocation,
 } from "@skilling-mmo/shared";
 import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
@@ -53,6 +54,7 @@ export function GameHud({
   onLoadPublicChat,
   equipment,
   inventoryCapacity,
+  onItemDrag,
 }: {
   displayName: string;
   username: string;
@@ -86,6 +88,7 @@ export function GameHud({
   onUnmutePlayer: (playerId: string) => void;
   onLoadPublicChat: () => void;
   equipment?: EquipmentLoadout;
+  onItemDrag?: (from: ItemLocation, to: ItemLocation) => void;
 }) {
   const [equipOpen, setEquipOpen] = useState(false);
   const traitName =
@@ -93,7 +96,14 @@ export function GameHud({
 
   let body: ReactNode = null;
   if (panel === "inventory") {
-    body = <InventoryPanel slots={inventory} capacity={inventoryCapacity} embedded />;
+    body = (
+      <InventoryPanel
+        slots={inventory}
+        capacity={inventoryCapacity}
+        embedded
+        onItemDrag={onItemDrag}
+      />
+    );
   } else if (panel === "bank") {
     body = (
       <BankPanel
@@ -208,6 +218,7 @@ export function GameHud({
         open={equipOpen}
         onClose={() => setEquipOpen(false)}
         loadout={equipment ?? {}}
+        onItemDrag={onItemDrag}
       />
     </>
   );

@@ -14,6 +14,7 @@ import type {
   ChatInboxThreadDto,
   PlayerSnapshot,
   EquipmentLoadout,
+  ItemLocation,
 } from "@skilling-mmo/shared";
 import { DEFAULT_APPEARANCE, INVENTORY_BASE_SLOTS } from "@skilling-mmo/shared";
 import {
@@ -306,6 +307,20 @@ export function App() {
           },
           onAction: (msg) => {
             bridge.current?.onActionResult(msg);
+            if (!cancelled && msg.action === "item_drag" && !msg.ok) {
+              const hints: Record<string, string> = {
+                clear_backpack_slots: "Move items out of backpack slots first",
+                wrong_slot: "That item can't go there",
+                occupied: "Target slot is occupied",
+                empty: "Nothing to move",
+                invalid_slot: "Invalid slot",
+                cannot_swap_stack: "Can't swap with a stack",
+              };
+              setStatus(hints[msg.reason ?? ""] ?? `Can't move item (${msg.reason ?? "error"})`);
+              window.setTimeout(() => {
+                if (!cancelled) setStatus("connected");
+              }, 2200);
+            }
           },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);
@@ -506,6 +521,9 @@ export function App() {
             onMutePlayer={(id) => void muteChatPlayer(id)}
             onUnmutePlayer={(id) => void unmuteChatPlayer(id)}
             onLoadPublicChat={() => void loadPublic()}
+            onItemDrag={(from: ItemLocation, to: ItemLocation) => {
+              conn.current?.sendIntent({ type: "ItemDrag", from, to });
+            }}
           />
         )}
       </div>

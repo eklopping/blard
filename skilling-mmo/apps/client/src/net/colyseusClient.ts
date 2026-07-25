@@ -216,7 +216,7 @@ export async function connectGame(
 
     room.onMessage("ActionResult", (msg: unknown) => {
       const parsed = parseActionResult(msg);
-      if (parsed.ok && parsed.action === "woodcutting_complete") {
+      if (parsed.ok && (parsed.action === "woodcutting_complete" || parsed.action === "item_drag")) {
         if (parsed.skill) applySkill(parsed.skill);
         if (parsed.inventory) applyInventory(parsed.inventory);
       }

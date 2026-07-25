@@ -138,6 +138,8 @@ export interface ItemDef {
   name: string;
   stackable: boolean;
   maxStack: number;
+  /** Paper-doll slots this item can be equipped into */
+  equipSlots?: EquipmentSlotId[];
   /** Extra inventory slots when equipped to `back` */
   backpackBonusSlots?: number;
   /** Tool bonuses when equipped to `primary` */
@@ -156,44 +158,6 @@ export const INVENTORY_BASE_SLOTS = 6;
 export const INVENTORY_ROW_SIZE = 6;
 /** Max slots persisted per character (base + future backpacks). */
 export const INVENTORY_SIZE = INVENTORY_BASE_SLOTS + INVENTORY_ROW_SIZE * 5;
-
-export const ITEM_DEFS: Record<string, ItemDef> = {
-  [ITEMS.LOGS]: { id: ITEMS.LOGS, name: "Logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
-  [ITEMS.OAK_LOGS]: { id: ITEMS.OAK_LOGS, name: "Oak logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
-  [ITEMS.COINS]: { id: ITEMS.COINS, name: "Coins", stackable: true, maxStack: DEFAULT_MAX_STACK },
-  [ITEMS.BASIC_BACKPACK]: {
-    id: ITEMS.BASIC_BACKPACK,
-    name: "Basic Backpack",
-    stackable: false,
-    maxStack: 1,
-    backpackBonusSlots: INVENTORY_ROW_SIZE,
-  },
-  [ITEMS.BASIC_AXE]: {
-    id: ITEMS.BASIC_AXE,
-    name: "Basic Axe",
-    stackable: false,
-    maxStack: 1,
-    tool: { skills: [SKILLS.WOODCUTTING], xpMult: 2, outputMult: 2 },
-  },
-  [ITEMS.BASIC_PICKAXE]: {
-    id: ITEMS.BASIC_PICKAXE,
-    name: "Basic Pickaxe",
-    stackable: false,
-    maxStack: 1,
-    tool: { skills: [SKILLS.MINING], xpMult: 2, outputMult: 2 },
-  },
-  [ITEMS.BASIC_SCYTHE]: {
-    id: ITEMS.BASIC_SCYTHE,
-    name: "Basic Scythe",
-    stackable: false,
-    maxStack: 1,
-    tool: { skills: [SKILLS.FARMING], xpMult: 2, outputMult: 2 },
-  },
-};
-
-export function maxStackFor(itemId: string): number {
-  return ITEM_DEFS[itemId]?.maxStack ?? DEFAULT_MAX_STACK;
-}
 
 /** Paper-doll equipment slots (UI + future equip rules). */
 export const EQUIPMENT_SLOT_IDS = [
@@ -230,6 +194,61 @@ export const EQUIPMENT_SLOT_LABELS: Record<EquipmentSlotId, string> = {
 
 export type EquipmentLoadout = Partial<Record<EquipmentSlotId, { itemId: string; quantity: number } | null>>;
 
+export const ITEM_DEFS: Record<string, ItemDef> = {
+  [ITEMS.LOGS]: { id: ITEMS.LOGS, name: "Logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.OAK_LOGS]: { id: ITEMS.OAK_LOGS, name: "Oak logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.COINS]: { id: ITEMS.COINS, name: "Coins", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.BASIC_BACKPACK]: {
+    id: ITEMS.BASIC_BACKPACK,
+    name: "Basic Backpack",
+    stackable: false,
+    maxStack: 1,
+    equipSlots: ["back"],
+    backpackBonusSlots: INVENTORY_ROW_SIZE,
+  },
+  [ITEMS.BASIC_AXE]: {
+    id: ITEMS.BASIC_AXE,
+    name: "Basic Axe",
+    stackable: false,
+    maxStack: 1,
+    equipSlots: ["primary"],
+    tool: { skills: [SKILLS.WOODCUTTING], xpMult: 2, outputMult: 2 },
+  },
+  [ITEMS.BASIC_PICKAXE]: {
+    id: ITEMS.BASIC_PICKAXE,
+    name: "Basic Pickaxe",
+    stackable: false,
+    maxStack: 1,
+    equipSlots: ["primary"],
+    tool: { skills: [SKILLS.MINING], xpMult: 2, outputMult: 2 },
+  },
+  [ITEMS.BASIC_SCYTHE]: {
+    id: ITEMS.BASIC_SCYTHE,
+    name: "Basic Scythe",
+    stackable: false,
+    maxStack: 1,
+    equipSlots: ["primary"],
+    tool: { skills: [SKILLS.FARMING], xpMult: 2, outputMult: 2 },
+  },
+};
+
+export function maxStackFor(itemId: string): number {
+  return ITEM_DEFS[itemId]?.maxStack ?? DEFAULT_MAX_STACK;
+}
+
+export function isEquipmentSlotId(value: string): value is EquipmentSlotId {
+  return (EQUIPMENT_SLOT_IDS as readonly string[]).includes(value);
+}
+
+export function canEquipInSlot(itemId: string, slot: EquipmentSlotId): boolean {
+  const slots = ITEM_DEFS[itemId]?.equipSlots;
+  return Boolean(slots?.includes(slot));
+}
+
+export function defaultEquipSlot(itemId: string): EquipmentSlotId | null {
+  return ITEM_DEFS[itemId]?.equipSlots?.[0] ?? null;
+}
+
 export function backpackBonusFor(itemId: string | null | undefined): number {
   if (!itemId) return 0;
   return ITEM_DEFS[itemId]?.backpackBonusSlots ?? 0;
@@ -239,6 +258,14 @@ export function inventoryCapacity(equipment: EquipmentLoadout | null | undefined
   const back = equipment?.back?.itemId;
   const bonus = backpackBonusFor(back);
   return Math.min(INVENTORY_SIZE, INVENTORY_BASE_SLOTS + bonus);
+}
+
+/** True if any inventory slot at or beyond `capacity` still holds items. */
+export function hasItemsBeyondCapacity(
+  inventory: { slot: number; itemId: string | null; quantity: number }[],
+  capacity: number,
+): boolean {
+  return inventory.some((s) => s.slot >= capacity && s.itemId && s.quantity > 0);
 }
 
 export function professionStarterTool(profession: ProfessionId): string {
@@ -286,6 +313,11 @@ export function parseEquipmentJson(raw: string | null | undefined): EquipmentLoa
 export function serializeEquipment(loadout: EquipmentLoadout): string {
   return JSON.stringify(loadout);
 }
+
+/** Drag-and-drop locations for inventory / equipment management. */
+export type ItemLocation =
+  | { kind: "inventory"; slot: number }
+  | { kind: "equipment"; slot: EquipmentSlotId };
 
 export const WOODCUTTING = {
   NORMAL_TREE: {
@@ -347,7 +379,8 @@ export type ClientMessage =
   | { type: "InteractResource"; resourceId: string }
   | { type: "CancelAction" }
   | { type: "ChatPublic"; body: string }
-  | { type: "ChatDm"; recipientId: string; body: string };
+  | { type: "ChatDm"; recipientId: string; body: string }
+  | { type: "ItemDrag"; from: ItemLocation; to: ItemLocation };
 
 /** Server → client events */
 export type ServerMessage =

@@ -26,11 +26,13 @@ import {
   type ChatMessageDto,
   type EquipmentLoadout,
   type ProfessionId,
+  type ItemLocation,
 } from "@skilling-mmo/shared";
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
 import { ChatRateLimiter } from "../chat/rateLimit.js";
 import { MovementController } from "../nav/movement.js";
+import { applyItemDrag } from "../inventory/itemDrag.js";
 // TODO: PvPMatchmaker enqueue(playerId) via Redis list when combat is added
 
 class PlayerState extends Schema {
@@ -269,6 +271,7 @@ export class WorldRoom extends Room<WorldState> {
         coins: this.playerCoins.get(playerId),
         inventory: this.playerInventory.get(playerId),
         skills: this.playerSkills.get(playerId),
+        equipmentJson: serializeEquipment(this.playerEquipment.get(playerId) ?? {}),
       });
       await flushDirtyPlayers();
       this.state.players.delete(playerId);
@@ -315,7 +318,57 @@ export class WorldRoom extends Room<WorldState> {
 
     if (msg.type === "ChatPublic" || msg.type === "ChatDm") {
       void this.handleChat(client, playerId, ps, msg);
+      return;
     }
+
+    if (msg.type === "ItemDrag") {
+      this.handleItemDrag(client, playerId, ps, msg.from, msg.to);
+    }
+  }
+
+  private handleItemDrag(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    from: ItemLocation,
+    to: ItemLocation,
+  ) {
+    const inv = this.playerInventory.get(playerId);
+    const equipment = this.playerEquipment.get(playerId);
+    if (!inv || !equipment) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "not_ready",
+        action: "item_drag",
+      });
+      return;
+    }
+
+    const result = applyItemDrag(inv, equipment, from, to);
+    if (!result.ok) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: result.reason,
+        action: "item_drag",
+      });
+      return;
+    }
+
+    this.playerInventory.set(playerId, result.inventory);
+    this.playerEquipment.set(playerId, result.equipment);
+    this.syncHudState(playerId, ps);
+    enqueueDirtyPlayer(playerId, {
+      inventory: result.inventory,
+      equipmentJson: serializeEquipment(result.equipment),
+    });
+    client.send("ActionResult", {
+      type: "ActionResult",
+      ok: true,
+      action: "item_drag",
+      inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+    });
   }
 
   private handleInteractResource(

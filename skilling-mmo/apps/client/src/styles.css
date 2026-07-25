@@ -325,6 +325,35 @@ body,
   opacity: 0.85;
 }
 
+.equip-hint {
+  margin: 0;
+  padding: 0.35rem 0.65rem 0;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.equip-slot.dragging,
+.slot.dragging {
+  opacity: 0.45;
+}
+
+.equip-slot.drag-over,
+.slot.drag-over {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: rgba(196, 163, 90, 0.18);
+}
+
+.slot[draggable="true"],
+.equip-slot[draggable="true"] {
+  cursor: grab;
+}
+
+.slot[draggable="true"]:active,
+.equip-slot[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .equip-slot-label {
   color: var(--muted);
   font-size: 0.62rem;
