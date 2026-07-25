@@ -7,8 +7,9 @@ import type {
   ChatMessageDto,
   PlayerSnapshot,
   SkillId,
+  EquipmentLoadout,
 } from "@skilling-mmo/shared";
-import { SKILLS } from "@skilling-mmo/shared";
+import { SKILLS, INVENTORY_BASE_SLOTS, parseEquipmentJson } from "@skilling-mmo/shared";
 
 /** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
 function resolveEndpoint(): string {
@@ -33,6 +34,8 @@ export interface HudLiveState {
   skills: SkillProgressDto[];
   inventory: InventorySlotDto[];
   coins: number;
+  inventoryCapacity: number;
+  equipment: EquipmentLoadout;
 }
 
 export interface GameConnection {
@@ -47,6 +50,7 @@ export interface ConnectHandlers {
   onInventory: (slots: InventorySlotDto[]) => void;
   onSkill: (s: SkillProgressDto) => void;
   onCoins?: (coins: number) => void;
+  onEquipment?: (equipment: EquipmentLoadout, capacity: number) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
   onStatus: (status: string) => void;
   onChatMessage: (message: ChatMessageDto) => void;
@@ -124,7 +128,13 @@ export async function connectGame(
   let reconnectAttempt = 0;
   let onlinePlayers: PlayerSnapshot[] = [];
   let localPlayerId = "";
-  let hudState: HudLiveState = { skills: [], inventory: [], coins: 0 };
+  let hudState: HudLiveState = {
+    skills: [],
+    inventory: [],
+    coins: 0,
+    inventoryCapacity: INVENTORY_BASE_SLOTS,
+    equipment: {},
+  };
 
   function applySkill(s: SkillProgressDto) {
     const rest = hudState.skills.filter((x) => x.skill !== s.skill);
@@ -149,6 +159,15 @@ export async function connectGame(
     handlers.onCoins?.(coins);
   }
 
+  function applyEquipment(equipment: EquipmentLoadout, capacity?: number) {
+    hudState = {
+      ...hudState,
+      equipment,
+      inventoryCapacity: capacity ?? hudState.inventoryCapacity,
+    };
+    handlers.onEquipment?.(equipment, hudState.inventoryCapacity);
+  }
+
   /** Apply HUD fields from synced Colyseus PlayerState (reliable real-time path). */
   function applyHudFromPlayerState(p: any) {
     if (typeof p.woodcuttingLevel === "number" && typeof p.woodcuttingXp === "number") {
@@ -160,6 +179,15 @@ export async function connectGame(
     }
     if (typeof p.coins === "number") {
       applyCoins(p.coins);
+    }
+    if (typeof p.equipmentJson === "string") {
+      const equipment = parseEquipmentJson(p.equipmentJson);
+      applyEquipment(
+        equipment,
+        typeof p.inventoryCapacity === "number" ? p.inventoryCapacity : undefined,
+      );
+    } else if (typeof p.inventoryCapacity === "number") {
+      hudState = { ...hudState, inventoryCapacity: p.inventoryCapacity };
     }
     const inv = parseInventoryJson(p.inventoryJson);
     if (inv) applyInventory(inv);
@@ -177,8 +205,13 @@ export async function connectGame(
         skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
         inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
         coins: msg.you?.coins ?? 0,
+        inventoryCapacity: msg.you?.inventoryCapacity ?? INVENTORY_BASE_SLOTS,
+        equipment: msg.you?.equipment ?? {},
       };
       handlers.onSnapshot(msg);
+      if (msg.you?.equipment) {
+        handlers.onEquipment?.(msg.you.equipment, hudState.inventoryCapacity);
+      }
     });
 
     room.onMessage("ActionResult", (msg: unknown) => {

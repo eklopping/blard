@@ -4,6 +4,8 @@ import {
   applyActionSpeedTicks,
   applyXpGain,
   applyOutputQty,
+  toolBonusForSkill,
+  type EquipmentLoadout,
   type SkillId,
 } from "@skilling-mmo/shared";
 
@@ -12,6 +14,7 @@ export interface SkillContext {
   x: number;
   y: number;
   traits: string[];
+  equipment: EquipmentLoadout;
   getSkill: (skill: SkillId) => { level: number; xp: number };
   getResource: (id: string) =>
     | { id: string; kind: string; x: number; y: number; available: boolean }
@@ -75,12 +78,15 @@ export class WoodcuttingHandler implements SkillHandler {
       return { ok: false, skill: SKILLS.WOODCUTTING, xp: 0, itemId: "", itemQty: 0 };
     }
     const def = WOODCUTTING.NORMAL_TREE;
+    const tool = toolBonusForSkill(ctx.equipment, SKILLS.WOODCUTTING);
+    const xp = applyXpGain(Math.max(1, Math.floor(def.xp * tool.xpMult)), ctx.traits);
+    const itemQty = applyOutputQty(Math.max(1, Math.floor(def.itemQty * tool.outputMult)), ctx.traits);
     return {
       ok: true,
       skill: SKILLS.WOODCUTTING,
-      xp: applyXpGain(def.xp, ctx.traits),
+      xp,
       itemId: def.itemId,
-      itemQty: applyOutputQty(def.itemQty, ctx.traits),
+      itemQty,
     };
   }
 }

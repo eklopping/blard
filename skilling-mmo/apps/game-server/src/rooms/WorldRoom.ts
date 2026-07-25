@@ -18,8 +18,14 @@ import {
   CHAT_DM_RATE_MS,
   validateChatBody,
   dmThreadKey,
+  inventoryCapacity,
+  parseEquipmentJson,
+  serializeEquipment,
+  professionStarterEquipment,
   type ClientMessage,
   type ChatMessageDto,
+  type EquipmentLoadout,
+  type ProfessionId,
 } from "@skilling-mmo/shared";
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
@@ -41,7 +47,9 @@ class PlayerState extends Schema {
   @type("number") woodcuttingLevel: number = 1;
   @type("number") woodcuttingXp: number = 0;
   @type("number") coins: number = 0;
+  @type("number") inventoryCapacity: number = 6;
   @type("string") inventoryJson: string = "[]";
+  @type("string") equipmentJson: string = "{}";
 }
 
 class ResourceState extends Schema {
@@ -80,6 +88,7 @@ export class WorldRoom extends Room<WorldState> {
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
+  private playerEquipment = new Map<string, EquipmentLoadout>();
   private chatLimiter = new ChatRateLimiter();
   private movement = new MovementController();
 
@@ -92,6 +101,21 @@ export class WorldRoom extends Room<WorldState> {
     };
   }
 
+  private capacityOf(playerId: string): number {
+    return inventoryCapacity(this.playerEquipment.get(playerId));
+  }
+
+  /** Visible bag slots only (capacity-bounded). */
+  private visibleInventory(playerId: string) {
+    const inv = this.playerInventory.get(playerId) ?? [];
+    const cap = this.capacityOf(playerId);
+    return inv.filter((s) => s.slot < cap).map((s) => ({
+      slot: s.slot,
+      itemId: s.itemId,
+      quantity: s.quantity,
+    }));
+  }
+
   /** Push in-memory skills/inventory/coins onto synced PlayerState for live HUD. */
   private syncHudState(playerId: string, ps?: PlayerState) {
     const player = ps ?? this.state.players.get(playerId);
@@ -100,10 +124,10 @@ export class WorldRoom extends Room<WorldState> {
     player.woodcuttingLevel = wc.level;
     player.woodcuttingXp = wc.xp;
     player.coins = this.playerCoins.get(playerId) ?? 0;
-    const inv = this.playerInventory.get(playerId) ?? [];
-    player.inventoryJson = JSON.stringify(
-      inv.map((s) => ({ slot: s.slot, itemId: s.itemId, quantity: s.quantity })),
-    );
+    const equipment = this.playerEquipment.get(playerId) ?? {};
+    player.inventoryCapacity = inventoryCapacity(equipment);
+    player.equipmentJson = serializeEquipment(equipment);
+    player.inventoryJson = JSON.stringify(this.visibleInventory(playerId));
   }
 
   private snapshotPlayers() {
@@ -194,6 +218,15 @@ export class WorldRoom extends Room<WorldState> {
     this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
+
+    let equipment = parseEquipmentJson(player.equipmentJson);
+    // Existing characters created before starter kits: grant once if unequipped
+    if (!equipment.back && !equipment.primary) {
+      const profession = fromPrismaProfession(player.profession);
+      equipment = professionStarterEquipment(profession);
+      enqueueDirtyPlayer(player.id, { equipmentJson: serializeEquipment(equipment) });
+    }
+    this.playerEquipment.set(player.id, equipment);
     this.syncHudState(player.id, ps);
 
     client.send("StateSnapshot", {
@@ -208,7 +241,7 @@ export class WorldRoom extends Room<WorldState> {
       })),
       you: {
         playerId: player.id,
-        inventory: this.playerInventory.get(player.id)!,
+        inventory: this.visibleInventory(player.id),
         skills: [...skills.entries()].map(([skill, v]) => ({
           skill: skill as typeof SKILLS.WOODCUTTING,
           level: v.level,
@@ -217,6 +250,8 @@ export class WorldRoom extends Room<WorldState> {
         coins: player.coins,
         traits: player.traits,
         appearance: this.appearanceOf(ps),
+        equipment,
+        inventoryCapacity: inventoryCapacity(equipment),
       },
     });
   }
@@ -242,6 +277,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerInventory.delete(playerId);
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
+    this.playerEquipment.delete(playerId);
     this.chatLimiter.clear(playerId);
   }
 
@@ -509,6 +545,7 @@ export class WorldRoom extends Room<WorldState> {
       x: ps.x,
       y: ps.y,
       traits: this.playerTraits.get(playerId) ?? [],
+      equipment: this.playerEquipment.get(playerId) ?? {},
       getSkill: (skill) => this.playerSkills.get(playerId)?.get(skill) ?? { level: 1, xp: 0 },
       getResource: (id) => {
         const r = this.state.resources.get(id);
@@ -559,11 +596,7 @@ export class WorldRoom extends Room<WorldState> {
         level: newLevel,
         xp: newXp,
       };
-      const inventoryUpdate = (this.playerInventory.get(playerId) ?? []).map((s) => ({
-        slot: s.slot,
-        itemId: s.itemId,
-        quantity: s.quantity,
-      }));
+      const inventoryUpdate = this.visibleInventory(playerId);
 
       const client = this.clients.find((c) => (c as any).playerId === playerId);
       if (client) {
@@ -607,10 +640,14 @@ export class WorldRoom extends Room<WorldState> {
     }
 
     const maxStack = maxStackFor(itemId);
+    const capacity = this.capacityOf(playerId);
     let remaining = qty;
 
     while (remaining > 0) {
-      const stack = inv.find((s) => s.itemId === itemId && s.quantity > 0 && s.quantity < maxStack);
+      const stack = inv.find(
+        (s) =>
+          s.slot < capacity && s.itemId === itemId && s.quantity > 0 && s.quantity < maxStack,
+      );
       if (stack) {
         const space = maxStack - stack.quantity;
         const add = Math.min(space, remaining);
@@ -618,7 +655,7 @@ export class WorldRoom extends Room<WorldState> {
         remaining -= add;
         continue;
       }
-      const empty = inv.find((s) => !s.itemId || s.quantity === 0);
+      const empty = inv.find((s) => s.slot < capacity && (!s.itemId || s.quantity === 0));
       if (!empty) return; // inventory full — drop remainder
       const add = Math.min(maxStack, remaining);
       empty.itemId = itemId;
@@ -626,6 +663,13 @@ export class WorldRoom extends Room<WorldState> {
       remaining -= add;
     }
   }
+}
+
+function fromPrismaProfession(profession: string): ProfessionId {
+  const lower = profession.toLowerCase();
+  if (lower === "miner") return "miner";
+  if (lower === "farmer") return "farmer";
+  return "woodsman";
 }
 
 function padInventory(

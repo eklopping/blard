@@ -13,8 +13,9 @@ import type {
   ChatMessageDto,
   ChatInboxThreadDto,
   PlayerSnapshot,
+  EquipmentLoadout,
 } from "@skilling-mmo/shared";
-import { DEFAULT_APPEARANCE } from "@skilling-mmo/shared";
+import { DEFAULT_APPEARANCE, INVENTORY_BASE_SLOTS } from "@skilling-mmo/shared";
 import {
   type GameSession,
   loadSession,
@@ -40,6 +41,8 @@ export function App() {
   );
   const [panel, setPanel] = useState<Panel>("inventory");
   const [inventory, setInventory] = useState<InventorySlotDto[]>([]);
+  const [inventoryCapacity, setInventoryCapacity] = useState(INVENTORY_BASE_SLOTS);
+  const [equipment, setEquipment] = useState<EquipmentLoadout>({});
   const [skills, setSkills] = useState<SkillProgressDto[]>([]);
   const [coins, setCoins] = useState(0);
   const [status, setStatus] = useState("idle");
@@ -284,6 +287,10 @@ export function App() {
             setInventory((snap.you.inventory ?? []).map((s) => ({ ...s })));
             setSkills((snap.you.skills ?? []).map((s) => ({ ...s })));
             setCoins(snap.you.coins);
+            if (snap.you.equipment) setEquipment(snap.you.equipment);
+            if (typeof snap.you.inventoryCapacity === "number") {
+              setInventoryCapacity(snap.you.inventoryCapacity);
+            }
             bridge.current?.applySnapshot(snap);
             setStatus("connected");
           },
@@ -291,6 +298,11 @@ export function App() {
           onSkill,
           onCoins: (coins) => {
             if (!cancelled) setCoins(coins);
+          },
+          onEquipment: (eq, capacity) => {
+            if (cancelled) return;
+            setEquipment(eq);
+            setInventoryCapacity(capacity);
           },
           onAction: (msg) => {
             bridge.current?.onActionResult(msg);
@@ -399,6 +411,14 @@ export function App() {
         return next.map((s) => ({ ...s }));
       });
       setCoins((prev) => (prev === hud.coins ? prev : hud.coins));
+      setInventoryCapacity((prev) =>
+        prev === hud.inventoryCapacity ? prev : hud.inventoryCapacity,
+      );
+      setEquipment((prev) => {
+        const next = hud.equipment;
+        if (JSON.stringify(prev) === JSON.stringify(next)) return prev;
+        return next;
+      });
     }, 250);
     return () => clearInterval(id);
   }, [status]);
@@ -456,6 +476,8 @@ export function App() {
             panel={panel}
             onPanel={setPanel}
             inventory={inventory}
+            inventoryCapacity={inventoryCapacity}
+            equipment={equipment}
             bank={bank}
             token={gameToken!}
             apiBase={API}

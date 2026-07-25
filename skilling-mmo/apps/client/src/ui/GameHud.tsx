@@ -52,6 +52,7 @@ export function GameHud({
   onUnmutePlayer,
   onLoadPublicChat,
   equipment,
+  inventoryCapacity,
 }: {
   displayName: string;
   username: string;
@@ -64,6 +65,7 @@ export function GameHud({
   panel: HudPanel;
   onPanel: (p: HudPanel) => void;
   inventory: InventorySlotDto[];
+  inventoryCapacity: number;
   bank: InventorySlotDto[];
   token: string;
   apiBase: string;
@@ -91,7 +93,7 @@ export function GameHud({
 
   let body: ReactNode = null;
   if (panel === "inventory") {
-    body = <InventoryPanel slots={inventory} embedded />;
+    body = <InventoryPanel slots={inventory} capacity={inventoryCapacity} embedded />;
   } else if (panel === "bank") {
     body = (
       <BankPanel

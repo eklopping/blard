@@ -8,6 +8,8 @@ import {
   PROFESSIONS,
   PROFESSION_STARTING_SKILLS,
   DEFAULT_APPEARANCE,
+  professionStarterEquipment,
+  serializeEquipment,
   type ProfessionId,
   type SkillId,
   type TraitId,
@@ -100,6 +102,7 @@ async function createPlayerForAccount(
       pantsColor: appearance.pantsColor,
       sortOrder: existingCount,
       coins: 100,
+      equipmentJson: serializeEquipment(professionStarterEquipment(profession)),
       x: 160,
       y: 160,
       skills: {

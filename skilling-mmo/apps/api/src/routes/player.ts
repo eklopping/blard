@@ -1,15 +1,26 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@skilling-mmo/db";
+import {
+  inventoryCapacity,
+  maxStackFor,
+  parseEquipmentJson,
+} from "@skilling-mmo/shared";
 
 export async function playerRoutes(app: FastifyInstance) {
   const auth = { preHandler: [app.authenticateCharacter] };
 
   app.get("/inventory", auth, async (req) => {
+    const playerId = req.user.playerId!;
+    const player = await prisma.player.findUniqueOrThrow({
+      where: { id: playerId },
+      select: { equipmentJson: true },
+    });
+    const capacity = inventoryCapacity(parseEquipmentJson(player.equipmentJson));
     const slots = await prisma.inventorySlot.findMany({
-      where: { playerId: req.user.playerId! },
+      where: { playerId, slot: { lt: capacity } },
       orderBy: { slot: "asc" },
     });
-    return { slots };
+    return { slots, capacity };
   });
 
   app.get("/bank", auth, async (req) => {
@@ -29,6 +40,13 @@ export async function playerRoutes(app: FastifyInstance) {
 
     try {
       await prisma.$transaction(async (tx) => {
+        const player = await tx.player.findUniqueOrThrow({
+          where: { id: playerId },
+          select: { equipmentJson: true },
+        });
+        const capacity = inventoryCapacity(parseEquipmentJson(player.equipmentJson));
+        if (body.invSlot! >= capacity) throw new Error("invalid_slot");
+
         const inv = await tx.inventorySlot.findUniqueOrThrow({
           where: { playerId_slot: { playerId, slot: body.invSlot! } },
         });
@@ -76,6 +94,12 @@ export async function playerRoutes(app: FastifyInstance) {
 
     try {
       await prisma.$transaction(async (tx) => {
+        const player = await tx.player.findUniqueOrThrow({
+          where: { id: playerId },
+          select: { equipmentJson: true },
+        });
+        const capacity = inventoryCapacity(parseEquipmentJson(player.equipmentJson));
+
         const bank = await tx.bankSlot.findUniqueOrThrow({
           where: { playerId_slot: { playerId, slot: body.bankSlot! } },
         });
@@ -84,12 +108,15 @@ export async function playerRoutes(app: FastifyInstance) {
         }
         const itemId = bank.itemId;
         const qty = body.quantity!;
+        const maxStack = maxStackFor(itemId);
 
         const invSlots = await tx.inventorySlot.findMany({
-          where: { playerId },
+          where: { playerId, slot: { lt: capacity } },
           orderBy: { slot: "asc" },
         });
-        let target = invSlots.find((s) => s.itemId === itemId);
+        let target = invSlots.find(
+          (s) => s.itemId === itemId && s.quantity > 0 && s.quantity < maxStack,
+        );
         if (!target) target = invSlots.find((s) => !s.itemId || s.quantity === 0);
         if (!target) throw new Error("inventory_full");
 

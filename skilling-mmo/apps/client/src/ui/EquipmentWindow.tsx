@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   EQUIPMENT_SLOT_LABELS,
+  ITEM_DEFS,
   type EquipmentLoadout,
   type EquipmentSlotId,
 } from "@skilling-mmo/shared";
@@ -93,7 +94,7 @@ export function EquipmentWindow({
               <span className="equip-slot-label">{EQUIPMENT_SLOT_LABELS[id]}</span>
               {item ? (
                 <span className="equip-slot-item">
-                  {item.itemId}
+                  {ITEM_DEFS[item.itemId]?.name ?? item.itemId}
                   {item.quantity > 1 ? ` ×${item.quantity}` : ""}
                 </span>
               ) : (

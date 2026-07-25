@@ -18,6 +18,10 @@ async function seedItems() {
     { id: "logs", name: "Logs", stackable: true, maxStack: 100 },
     { id: "oak_logs", name: "Oak logs", stackable: true, maxStack: 100 },
     { id: "coins", name: "Coins", stackable: true, maxStack: 100 },
+    { id: "basic_backpack", name: "Basic Backpack", stackable: false, maxStack: 1 },
+    { id: "basic_axe", name: "Basic Axe", stackable: false, maxStack: 1 },
+    { id: "basic_pickaxe", name: "Basic Pickaxe", stackable: false, maxStack: 1 },
+    { id: "basic_scythe", name: "Basic Scythe", stackable: false, maxStack: 1 },
   ];
   for (const item of items) {
     await prisma.itemDefinition.upsert({

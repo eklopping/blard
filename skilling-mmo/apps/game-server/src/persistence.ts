@@ -4,6 +4,7 @@ interface DirtyPayload {
   x?: number;
   y?: number;
   coins?: number;
+  equipmentJson?: string;
   inventory?: { slot: number; itemId: string | null; quantity: number }[];
   skills?: Map<string, { level: number; xp: number }>;
   ledger?: {
@@ -24,6 +25,7 @@ export function enqueueDirtyPlayer(playerId: string, patch: DirtyPayload) {
     inventory: patch.inventory ?? cur.inventory,
     skills: patch.skills ?? cur.skills,
     ledger: patch.ledger ?? cur.ledger,
+    equipmentJson: patch.equipmentJson ?? cur.equipmentJson,
   });
 }
 
@@ -35,21 +37,28 @@ export async function flushDirtyPlayers() {
   for (const [playerId, data] of entries) {
     try {
       await prisma.$transaction(async (tx) => {
-        if (data.x != null || data.y != null || data.coins != null) {
+        if (data.x != null || data.y != null || data.coins != null || data.equipmentJson != null) {
           await tx.player.update({
             where: { id: playerId },
             data: {
               ...(data.x != null ? { x: data.x } : {}),
               ...(data.y != null ? { y: data.y } : {}),
               ...(data.coins != null ? { coins: data.coins } : {}),
+              ...(data.equipmentJson != null ? { equipmentJson: data.equipmentJson } : {}),
             },
           });
         }
         if (data.inventory) {
           for (const slot of data.inventory) {
-            await tx.inventorySlot.update({
+            await tx.inventorySlot.upsert({
               where: { playerId_slot: { playerId, slot: slot.slot } },
-              data: { itemId: slot.itemId, quantity: slot.quantity },
+              create: {
+                playerId,
+                slot: slot.slot,
+                itemId: slot.itemId,
+                quantity: slot.quantity,
+              },
+              update: { itemId: slot.itemId, quantity: slot.quantity },
             });
           }
         }
