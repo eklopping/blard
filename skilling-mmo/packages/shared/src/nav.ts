@@ -21,8 +21,8 @@ export const ARRIVE_EPSILON_PX = 2;
  */
 export const ACTION_REPEAT_COOLDOWN_MS = 5000;
 
-/** Horizontal stand offset from a resource center (left/right sides). */
-export const RESOURCE_SIDE_OFFSET_PX = TILE_SIZE * 2;
+/** Horizontal stand offset from resource anchor (left/right). ~adjacent, within interactRange. */
+export const RESOURCE_SIDE_OFFSET_PX = 28;
 
 export interface Vec2 {
   x: number;
@@ -182,9 +182,8 @@ export function findApproachPoint(
 }
 
 /**
- * Stand on the left or right side of a resource, picking the side closer to
- * the player. Keeps the same Y as the resource anchor so feet line up with
- * the interactable (e.g. tree base).
+ * Stand on the left or right side of a resource, picking the closer side.
+ * Uses exact pixel offsets (same Y) so the player lines up beside the object.
  */
 export function findClosestSideApproach(
   from: Vec2,
@@ -196,20 +195,13 @@ export function findClosestSideApproach(
   const candidates: Vec2[] = [];
 
   for (const dir of [-1, 1] as const) {
-    const rawX = resource.x + dir * sideOffset;
-    const clamped = clampToWorld(rawX, resource.y);
-    const { tx, ty } = worldToTile(clamped.x, clamped.y);
+    const point = clampToWorld(resource.x + dir * sideOffset, resource.y);
+    const { tx, ty } = worldToTile(point.x, point.y);
     if (!isWalkable(g, tx, ty)) continue;
-    // Snap X onto the walk tile center, but keep resource Y for visual alignment
-    const center = tileToWorldCenter(tx, ty);
-    candidates.push({ x: center.x, y: resource.y });
+    candidates.push({ x: point.x, y: resource.y });
   }
 
-  if (candidates.length === 0) {
-    // Fallback: nearest walkable snap, then force Y alignment
-    const snapped = snapToTileCenter(resource.x - sideOffset, resource.y, g);
-    return snapped ? { x: snapped.x, y: resource.y } : null;
-  }
+  if (candidates.length === 0) return null;
 
   let best = candidates[0]!;
   let bestDist = Math.hypot(best.x - from.x, best.y - from.y);

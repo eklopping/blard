@@ -17,7 +17,6 @@ import {
   CHAT_DM_RATE_MS,
   validateChatBody,
   dmThreadKey,
-  findClosestSideApproach,
   type ClientMessage,
   type ChatMessageDto,
 } from "@skilling-mmo/shared";
@@ -327,20 +326,8 @@ export class WorldRoom extends Room<WorldState> {
       return;
     }
 
-    // Lock in place for the duration of the action — snap to the side stand
+    // Lock in place for the duration of the action (already at side stand from walk)
     this.movement.cancelMovement(playerId);
-    const resource = this.state.resources.get(resourceId);
-    if (resource) {
-      const stand = findClosestSideApproach(
-        { x: ps.x, y: ps.y },
-        { x: resource.x, y: resource.y },
-      );
-      if (stand) {
-        ps.x = stand.x;
-        ps.y = stand.y;
-        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
-      }
-    }
 
     const ctx = this.buildCtx(playerId, ps);
     const start = handler.tryStart(ctx, resourceId);

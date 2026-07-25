@@ -176,14 +176,6 @@ export class WorldScene extends Phaser.Scene {
     if (msg.ok && msg.action === "woodcutting") {
       this.acting = true;
       this.predictedTarget = undefined;
-      // Snap visually to the lined-up side stand
-      if (this.localPlayer && this.tree) {
-        const stand = findClosestSideApproach(
-          { x: this.localPlayer.x, y: this.localPlayer.y },
-          { x: this.tree.x, y: this.tree.y },
-        );
-        if (stand) this.localPlayer.setPosition(stand.x, stand.y);
-      }
       this.startChopVfx();
       return;
     }

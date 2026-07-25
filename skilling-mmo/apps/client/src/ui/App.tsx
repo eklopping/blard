@@ -261,10 +261,19 @@ export function App() {
   useEffect(() => {
     if (!gameToken) return;
     let cancelled = false;
-    // Fresh connect (new character / reconnect) — drop any previous
-    // character's chat state before loads complete instead of leaving
-    // stale messages/threads visible during the connect.
     resetChatState();
+
+    const onInventory = (slots: InventorySlotDto[]) => {
+      if (cancelled) return;
+      setInventory(slots.map((s) => ({ ...s })));
+    };
+    const onSkill = (s: SkillProgressDto) => {
+      if (cancelled) return;
+      setSkills((prev) => {
+        const rest = prev.filter((x) => x.skill !== s.skill);
+        return [...rest, { skill: s.skill, level: s.level, xp: s.xp }];
+      });
+    };
 
     (async () => {
       setStatus("connecting…");
@@ -272,38 +281,16 @@ export function App() {
         const c = await connectGame(gameToken, {
           onSnapshot: (snap) => {
             if (cancelled) return;
-            setInventory(snap.you.inventory);
-            setSkills(snap.you.skills);
+            setInventory((snap.you.inventory ?? []).map((s) => ({ ...s })));
+            setSkills((snap.you.skills ?? []).map((s) => ({ ...s })));
             setCoins(snap.you.coins);
             bridge.current?.applySnapshot(snap);
             setStatus("connected");
           },
-          onInventory: (slots) => {
-            if (!cancelled && Array.isArray(slots)) {
-              setInventory(slots.map((s) => ({ ...s })));
-            }
-          },
-          onSkill: (s) => {
-            if (cancelled || !s?.skill) return;
-            setSkills((prev) => {
-              const rest = prev.filter((x) => x.skill !== s.skill);
-              return [...rest, { skill: s.skill, level: s.level, xp: s.xp }];
-            });
-          },
+          onInventory,
+          onSkill,
           onAction: (msg) => {
             bridge.current?.onActionResult(msg);
-            if (!cancelled && msg.ok && msg.action === "woodcutting_complete") {
-              if (msg.skill) {
-                const skill = msg.skill;
-                setSkills((prev) => {
-                  const rest = prev.filter((x) => x.skill !== skill.skill);
-                  return [...rest, { ...skill }];
-                });
-              }
-              if (Array.isArray(msg.inventory)) {
-                setInventory(msg.inventory.map((s) => ({ ...s })));
-              }
-            }
           },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);
@@ -322,7 +309,6 @@ export function App() {
               setChatMessages((prev) => [...prev, message]);
               return;
             }
-            // DIRECT
             void loadInbox();
             if (
               chatModeRef.current === "dm" &&
@@ -350,6 +336,11 @@ export function App() {
           return;
         }
         conn.current = c;
+        // Sync HUD from connection store (covers any missed React setState races)
+        const hud = c.getHudState();
+        setInventory(hud.inventory.map((s) => ({ ...s })));
+        setSkills(hud.skills.map((s) => ({ ...s })));
+        setCoins(hud.coins);
         void loadMutes();
         void loadPublic();
         void loadInbox();
@@ -377,7 +368,35 @@ export function App() {
     if (status !== "connected") return;
     const id = setInterval(() => {
       setOnlinePlayers(conn.current?.getOnlinePlayers() ?? []);
-    }, 1000);
+      const hud = conn.current?.getHudState();
+      if (!hud) return;
+      setSkills((prev) => {
+        const next = hud.skills;
+        if (
+          prev.length === next.length &&
+          prev.every((s, i) => s.skill === next[i]?.skill && s.level === next[i]?.level && s.xp === next[i]?.xp)
+        ) {
+          return prev;
+        }
+        return next.map((s) => ({ ...s }));
+      });
+      setInventory((prev) => {
+        const next = hud.inventory;
+        if (
+          prev.length === next.length &&
+          prev.every(
+            (s, i) =>
+              s.slot === next[i]?.slot &&
+              s.itemId === next[i]?.itemId &&
+              s.quantity === next[i]?.quantity,
+          )
+        ) {
+          return prev;
+        }
+        return next.map((s) => ({ ...s }));
+      });
+      setCoins((prev) => (prev === hud.coins ? prev : hud.coins));
+    }, 250);
     return () => clearInterval(id);
   }, [status]);
 

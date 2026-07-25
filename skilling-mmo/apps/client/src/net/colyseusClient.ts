@@ -27,10 +27,17 @@ function resolveEndpoint(): string {
   return "ws://127.0.0.1:2567";
 }
 
+export interface HudLiveState {
+  skills: SkillProgressDto[];
+  inventory: InventorySlotDto[];
+  coins: number;
+}
+
 export interface GameConnection {
   sendIntent: (msg: ClientMessage) => void;
   leave: () => void;
   getOnlinePlayers: () => PlayerSnapshot[];
+  getHudState: () => HudLiveState;
 }
 
 export interface ConnectHandlers {
@@ -53,6 +60,46 @@ function errorText(e: unknown): string {
   return String(e);
 }
 
+function asRecord(msg: unknown): Record<string, unknown> {
+  return msg && typeof msg === "object" ? (msg as Record<string, unknown>) : {};
+}
+
+function parseSkill(msg: unknown): SkillProgressDto | null {
+  const m = asRecord(msg);
+  const skill = m.skill;
+  const level = m.level;
+  const xp = m.xp;
+  if (typeof skill !== "string") return null;
+  if (typeof level !== "number" || typeof xp !== "number") return null;
+  return { skill: skill as SkillProgressDto["skill"], level, xp };
+}
+
+function parseInventory(msg: unknown): InventorySlotDto[] | null {
+  if (Array.isArray(msg)) {
+    return msg as InventorySlotDto[];
+  }
+  const m = asRecord(msg);
+  if (Array.isArray(m.slots)) {
+    return m.slots as InventorySlotDto[];
+  }
+  return null;
+}
+
+function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "ActionResult" }> {
+  const m = asRecord(msg);
+  const nestedSkill = m.skill && typeof m.skill === "object" ? parseSkill(m.skill) : null;
+  const inventory = Array.isArray(m.inventory) ? (m.inventory as InventorySlotDto[]) : null;
+  return {
+    type: "ActionResult",
+    ok: Boolean(m.ok),
+    reason: typeof m.reason === "string" ? m.reason : undefined,
+    action: typeof m.action === "string" ? m.action : undefined,
+    resourceId: typeof m.resourceId === "string" ? m.resourceId : undefined,
+    skill: nestedSkill ?? undefined,
+    inventory: inventory ?? undefined,
+  };
+}
+
 export async function connectGame(
   token: string,
   handlers: ConnectHandlers,
@@ -64,6 +111,24 @@ export async function connectGame(
   let intentionalLeave = false;
   let reconnectAttempt = 0;
   let onlinePlayers: PlayerSnapshot[] = [];
+  let hudState: HudLiveState = { skills: [], inventory: [], coins: 0 };
+
+  function applySkill(s: SkillProgressDto) {
+    const rest = hudState.skills.filter((x) => x.skill !== s.skill);
+    hudState = {
+      ...hudState,
+      skills: [...rest, { skill: s.skill, level: s.level, xp: s.xp }],
+    };
+    handlers.onSkill(s);
+  }
+
+  function applyInventory(slots: InventorySlotDto[]) {
+    hudState = {
+      ...hudState,
+      inventory: slots.map((s) => ({ ...s })),
+    };
+    handlers.onInventory(hudState.inventory);
+  }
 
   async function join() {
     handlers.onStatus(reconnectAttempt ? `reconnecting (${reconnectAttempt})…` : "joining…");
@@ -71,19 +136,34 @@ export async function connectGame(
     reconnectAttempt = 0;
     handlers.onStatus("connected");
 
-    room.onMessage("StateSnapshot", (msg) => handlers.onSnapshot(msg));
-    room.onMessage("InventoryUpdate", (msg: { slots?: InventorySlotDto[] } | InventorySlotDto[]) => {
-      const slots = Array.isArray(msg) ? msg : msg?.slots;
-      if (Array.isArray(slots)) handlers.onInventory(slots);
+    room.onMessage("StateSnapshot", (msg: Extract<ServerMessage, { type: "StateSnapshot" }>) => {
+      hudState = {
+        skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
+        inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
+        coins: msg.you?.coins ?? 0,
+      };
+      handlers.onSnapshot(msg);
     });
-    room.onMessage(
-      "SkillUpdate",
-      (msg: { skill?: SkillProgressDto["skill"]; level?: number; xp?: number }) => {
-        if (msg?.skill == null || msg.level == null || msg.xp == null) return;
-        handlers.onSkill({ skill: msg.skill, level: msg.level, xp: msg.xp });
-      },
-    );
-    room.onMessage("ActionResult", (msg) => handlers.onAction(msg));
+
+    room.onMessage("InventoryUpdate", (msg: unknown) => {
+      const slots = parseInventory(msg);
+      if (slots) applyInventory(slots);
+    });
+
+    room.onMessage("SkillUpdate", (msg: unknown) => {
+      const skill = parseSkill(msg);
+      if (skill) applySkill(skill);
+    });
+
+    room.onMessage("ActionResult", (msg: unknown) => {
+      const parsed = parseActionResult(msg);
+      if (parsed.ok && parsed.action === "woodcutting_complete") {
+        if (parsed.skill) applySkill(parsed.skill);
+        if (parsed.inventory) applyInventory(parsed.inventory);
+      }
+      handlers.onAction(parsed);
+    });
+
     room.onMessage("ChatMessage", (msg: Extract<ServerMessage, { type: "ChatMessage" }>) => {
       handlers.onChatMessage(msg.message);
     });
@@ -150,6 +230,9 @@ export async function connectGame(
     },
     getOnlinePlayers() {
       return onlinePlayers;
+    },
+    getHudState() {
+      return hudState;
     },
   };
 }
