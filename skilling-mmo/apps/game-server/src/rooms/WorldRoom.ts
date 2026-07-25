@@ -36,6 +36,11 @@ class PlayerState extends Schema {
   @type("string") skinColor: string = "#e899a3";
   @type("string") shirtColor: string = "#0f1e3d";
   @type("string") pantsColor: string = "#4b250a";
+  /** Live HUD fields — synced via Colyseus state (same path as position). */
+  @type("number") woodcuttingLevel: number = 1;
+  @type("number") woodcuttingXp: number = 0;
+  @type("number") coins: number = 0;
+  @type("string") inventoryJson: string = "[]";
 }
 
 class ResourceState extends Schema {
@@ -84,6 +89,20 @@ export class WorldRoom extends Room<WorldState> {
       shirtColor: ps.shirtColor,
       pantsColor: ps.pantsColor,
     };
+  }
+
+  /** Push in-memory skills/inventory/coins onto synced PlayerState for live HUD. */
+  private syncHudState(playerId: string, ps?: PlayerState) {
+    const player = ps ?? this.state.players.get(playerId);
+    if (!player) return;
+    const wc = this.playerSkills.get(playerId)?.get(SKILLS.WOODCUTTING) ?? { level: 1, xp: 0 };
+    player.woodcuttingLevel = wc.level;
+    player.woodcuttingXp = wc.xp;
+    player.coins = this.playerCoins.get(playerId) ?? 0;
+    const inv = this.playerInventory.get(playerId) ?? [];
+    player.inventoryJson = JSON.stringify(
+      inv.map((s) => ({ slot: s.slot, itemId: s.itemId, quantity: s.quantity })),
+    );
   }
 
   private snapshotPlayers() {
@@ -174,6 +193,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
+    this.syncHudState(player.id, ps);
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
@@ -531,6 +551,7 @@ export class WorldRoom extends Room<WorldState> {
       skills.set(result.skill, { level: newLevel, xp: newXp });
 
       this.addItem(playerId, result.itemId, result.itemQty);
+      this.syncHudState(playerId, ps);
 
       const skillUpdate = {
         skill: result.skill,
@@ -545,21 +566,16 @@ export class WorldRoom extends Room<WorldState> {
 
       const client = this.clients.find((c) => (c as any).playerId === playerId);
       if (client) {
-        client.send("SkillUpdate", {
-          type: "SkillUpdate",
-          ...skillUpdate,
-        });
-        client.send("InventoryUpdate", {
-          type: "InventoryUpdate",
-          slots: inventoryUpdate,
-        });
+        // Flat primitives only — nested objects have been unreliable over Colyseus messages
         client.send("ActionResult", {
           type: "ActionResult",
           ok: true,
           action: "woodcutting_complete",
           resourceId: action.resourceId,
-          skill: skillUpdate,
-          inventory: inventoryUpdate,
+          skillId: skillUpdate.skill,
+          skillLevel: skillUpdate.level,
+          skillXp: skillUpdate.xp,
+          inventoryJson: JSON.stringify(inventoryUpdate),
         });
       }
 

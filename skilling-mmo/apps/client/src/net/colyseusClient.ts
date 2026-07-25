@@ -6,7 +6,9 @@ import type {
   SkillProgressDto,
   ChatMessageDto,
   PlayerSnapshot,
+  SkillId,
 } from "@skilling-mmo/shared";
+import { SKILLS } from "@skilling-mmo/shared";
 
 /** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
 function resolveEndpoint(): string {
@@ -44,6 +46,7 @@ export interface ConnectHandlers {
   onSnapshot: (snap: Extract<ServerMessage, { type: "StateSnapshot" }>) => void;
   onInventory: (slots: InventorySlotDto[]) => void;
   onSkill: (s: SkillProgressDto) => void;
+  onCoins?: (coins: number) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
   onStatus: (status: string) => void;
   onChatMessage: (message: ChatMessageDto) => void;
@@ -64,38 +67,47 @@ function asRecord(msg: unknown): Record<string, unknown> {
   return msg && typeof msg === "object" ? (msg as Record<string, unknown>) : {};
 }
 
-function parseSkill(msg: unknown): SkillProgressDto | null {
-  const m = asRecord(msg);
-  const skill = m.skill;
-  const level = m.level;
-  const xp = m.xp;
-  if (typeof skill !== "string") return null;
-  if (typeof level !== "number" || typeof xp !== "number") return null;
-  return { skill: skill as SkillProgressDto["skill"], level, xp };
-}
-
-function parseInventory(msg: unknown): InventorySlotDto[] | null {
-  if (Array.isArray(msg)) {
-    return msg as InventorySlotDto[];
+function parseInventoryJson(raw: unknown): InventorySlotDto[] | null {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as InventorySlotDto[]) : null;
+  } catch {
+    return null;
   }
-  const m = asRecord(msg);
-  if (Array.isArray(m.slots)) {
-    return m.slots as InventorySlotDto[];
-  }
-  return null;
 }
 
 function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "ActionResult" }> {
   const m = asRecord(msg);
-  const nestedSkill = m.skill && typeof m.skill === "object" ? parseSkill(m.skill) : null;
-  const inventory = Array.isArray(m.inventory) ? (m.inventory as InventorySlotDto[]) : null;
+  let skill: SkillProgressDto | undefined;
+  if (typeof m.skillId === "string" && typeof m.skillLevel === "number" && typeof m.skillXp === "number") {
+    skill = {
+      skill: m.skillId as SkillId,
+      level: m.skillLevel,
+      xp: m.skillXp,
+    };
+  } else if (m.skill && typeof m.skill === "object") {
+    const s = asRecord(m.skill);
+    if (typeof s.skill === "string" && typeof s.level === "number" && typeof s.xp === "number") {
+      skill = { skill: s.skill as SkillId, level: s.level, xp: s.xp };
+    }
+  }
+
+  const inventory =
+    parseInventoryJson(m.inventoryJson) ??
+    (Array.isArray(m.inventory) ? (m.inventory as InventorySlotDto[]) : null);
+
   return {
     type: "ActionResult",
     ok: Boolean(m.ok),
     reason: typeof m.reason === "string" ? m.reason : undefined,
     action: typeof m.action === "string" ? m.action : undefined,
     resourceId: typeof m.resourceId === "string" ? m.resourceId : undefined,
-    skill: nestedSkill ?? undefined,
+    skillId: typeof m.skillId === "string" ? (m.skillId as SkillId) : undefined,
+    skillLevel: typeof m.skillLevel === "number" ? m.skillLevel : undefined,
+    skillXp: typeof m.skillXp === "number" ? m.skillXp : undefined,
+    inventoryJson: typeof m.inventoryJson === "string" ? m.inventoryJson : undefined,
+    skill,
     inventory: inventory ?? undefined,
   };
 }
@@ -111,6 +123,7 @@ export async function connectGame(
   let intentionalLeave = false;
   let reconnectAttempt = 0;
   let onlinePlayers: PlayerSnapshot[] = [];
+  let localPlayerId = "";
   let hudState: HudLiveState = { skills: [], inventory: [], coins: 0 };
 
   function applySkill(s: SkillProgressDto) {
@@ -130,6 +143,28 @@ export async function connectGame(
     handlers.onInventory(hudState.inventory);
   }
 
+  function applyCoins(coins: number) {
+    if (hudState.coins === coins) return;
+    hudState = { ...hudState, coins };
+    handlers.onCoins?.(coins);
+  }
+
+  /** Apply HUD fields from synced Colyseus PlayerState (reliable real-time path). */
+  function applyHudFromPlayerState(p: any) {
+    if (typeof p.woodcuttingLevel === "number" && typeof p.woodcuttingXp === "number") {
+      applySkill({
+        skill: SKILLS.WOODCUTTING,
+        level: p.woodcuttingLevel,
+        xp: p.woodcuttingXp,
+      });
+    }
+    if (typeof p.coins === "number") {
+      applyCoins(p.coins);
+    }
+    const inv = parseInventoryJson(p.inventoryJson);
+    if (inv) applyInventory(inv);
+  }
+
   async function join() {
     handlers.onStatus(reconnectAttempt ? `reconnecting (${reconnectAttempt})…` : "joining…");
     room = await client.joinOrCreate("world", { token });
@@ -137,22 +172,13 @@ export async function connectGame(
     handlers.onStatus("connected");
 
     room.onMessage("StateSnapshot", (msg: Extract<ServerMessage, { type: "StateSnapshot" }>) => {
+      localPlayerId = msg.you?.playerId ?? localPlayerId;
       hudState = {
         skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
         inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
         coins: msg.you?.coins ?? 0,
       };
       handlers.onSnapshot(msg);
-    });
-
-    room.onMessage("InventoryUpdate", (msg: unknown) => {
-      const slots = parseInventory(msg);
-      if (slots) applyInventory(slots);
-    });
-
-    room.onMessage("SkillUpdate", (msg: unknown) => {
-      const skill = parseSkill(msg);
-      if (skill) applySkill(skill);
     });
 
     room.onMessage("ActionResult", (msg: unknown) => {
@@ -174,8 +200,9 @@ export async function connectGame(
     room.onStateChange((state: any) => {
       onlinePlayers = [];
       state.players?.forEach((p: any, id: string) => {
+        const playerId = (typeof p.id === "string" && p.id) || id;
         onlinePlayers.push({
-          id,
+          id: playerId,
           name: p.name,
           x: p.x,
           y: p.y,
@@ -187,7 +214,11 @@ export async function connectGame(
             pantsColor: p.pantsColor,
           },
         });
-        handlers.reconcilePlayer(id, p.x, p.y);
+        handlers.reconcilePlayer(playerId, p.x, p.y);
+
+        if (localPlayerId && (playerId === localPlayerId || id === localPlayerId)) {
+          applyHudFromPlayerState(p);
+        }
       });
     });
 

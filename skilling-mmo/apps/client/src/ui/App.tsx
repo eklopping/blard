@@ -289,6 +289,9 @@ export function App() {
           },
           onInventory,
           onSkill,
+          onCoins: (coins) => {
+            if (!cancelled) setCoins(coins);
+          },
           onAction: (msg) => {
             bridge.current?.onActionResult(msg);
           },
