@@ -8,8 +8,7 @@ import {
   PROFESSIONS,
   PROFESSION_STARTING_SKILLS,
   DEFAULT_APPEARANCE,
-  professionStarterEquipment,
-  serializeEquipment,
+  professionStarterBagItems,
   type ProfessionId,
   type SkillId,
   type TraitId,
@@ -90,6 +89,7 @@ async function createPlayerForAccount(
 ) {
   const skills = startingSkills(profession);
   const existingCount = await prisma.player.count({ where: { accountId } });
+  const starterItems = professionStarterBagItems(profession);
   const player = await prisma.player.create({
     data: {
       accountId,
@@ -102,18 +102,21 @@ async function createPlayerForAccount(
       pantsColor: appearance.pantsColor,
       sortOrder: existingCount,
       coins: 100,
-      equipmentJson: serializeEquipment(professionStarterEquipment(profession)),
+      equipmentJson: "{}",
       x: 160,
       y: 160,
       skills: {
         create: skills.map((skill) => ({ skill, level: 1, xp: 0 })),
       },
       inventory: {
-        create: Array.from({ length: INVENTORY_SIZE }, (_, slot) => ({
-          slot,
-          itemId: null,
-          quantity: 0,
-        })),
+        create: Array.from({ length: INVENTORY_SIZE }, (_, slot) => {
+          const starter = starterItems[slot];
+          return {
+            slot,
+            itemId: starter?.itemId ?? null,
+            quantity: starter?.quantity ?? 0,
+          };
+        }),
       },
       bank: {
         create: Array.from({ length: BANK_SIZE }, (_, slot) => ({

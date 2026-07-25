@@ -288,6 +288,16 @@ export function professionStarterEquipment(profession: ProfessionId): EquipmentL
   };
 }
 
+/** Starter items placed in the bag so the player equips them themselves. */
+export function professionStarterBagItems(
+  profession: ProfessionId,
+): { itemId: string; quantity: number }[] {
+  return [
+    { itemId: ITEMS.BASIC_BACKPACK, quantity: 1 },
+    { itemId: professionStarterTool(profession), quantity: 1 },
+  ];
+}
+
 export function toolBonusForSkill(
   equipment: EquipmentLoadout | null | undefined,
   skill: SkillId,
@@ -397,6 +407,8 @@ export type ServerMessage =
       skillLevel?: number;
       skillXp?: number;
       inventoryJson?: string;
+      equipmentJson?: string;
+      inventoryCapacity?: number;
       skill?: SkillProgressDto;
       inventory?: InventorySlotDto[];
     }

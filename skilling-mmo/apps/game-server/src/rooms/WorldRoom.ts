@@ -21,11 +21,9 @@ import {
   inventoryCapacity,
   parseEquipmentJson,
   serializeEquipment,
-  professionStarterEquipment,
   type ClientMessage,
   type ChatMessageDto,
   type EquipmentLoadout,
-  type ProfessionId,
   type ItemLocation,
 } from "@skilling-mmo/shared";
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
@@ -221,13 +219,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
 
-    let equipment = parseEquipmentJson(player.equipmentJson);
-    // Existing characters created before starter kits: grant once if unequipped
-    if (!equipment.back && !equipment.primary) {
-      const profession = fromPrismaProfession(player.profession);
-      equipment = professionStarterEquipment(profession);
-      enqueueDirtyPlayer(player.id, { equipmentJson: serializeEquipment(equipment) });
-    }
+    const equipment = parseEquipmentJson(player.equipmentJson);
     this.playerEquipment.set(player.id, equipment);
     this.syncHudState(player.id, ps);
 
@@ -368,6 +360,8 @@ export class WorldRoom extends Room<WorldState> {
       ok: true,
       action: "item_drag",
       inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+      equipmentJson: serializeEquipment(result.equipment),
+      inventoryCapacity: inventoryCapacity(result.equipment),
     });
   }
 
@@ -716,13 +710,6 @@ export class WorldRoom extends Room<WorldState> {
       remaining -= add;
     }
   }
-}
-
-function fromPrismaProfession(profession: string): ProfessionId {
-  const lower = profession.toLowerCase();
-  if (lower === "miner") return "miner";
-  if (lower === "farmer") return "farmer";
-  return "woodsman";
 }
 
 function padInventory(

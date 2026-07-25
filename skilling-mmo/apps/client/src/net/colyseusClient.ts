@@ -111,6 +111,8 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
     skillLevel: typeof m.skillLevel === "number" ? m.skillLevel : undefined,
     skillXp: typeof m.skillXp === "number" ? m.skillXp : undefined,
     inventoryJson: typeof m.inventoryJson === "string" ? m.inventoryJson : undefined,
+    equipmentJson: typeof m.equipmentJson === "string" ? m.equipmentJson : undefined,
+    inventoryCapacity: typeof m.inventoryCapacity === "number" ? m.inventoryCapacity : undefined,
     skill,
     inventory: inventory ?? undefined,
   };
@@ -209,9 +211,7 @@ export async function connectGame(
         equipment: msg.you?.equipment ?? {},
       };
       handlers.onSnapshot(msg);
-      if (msg.you?.equipment) {
-        handlers.onEquipment?.(msg.you.equipment, hudState.inventoryCapacity);
-      }
+      handlers.onEquipment?.(hudState.equipment, hudState.inventoryCapacity);
     });
 
     room.onMessage("ActionResult", (msg: unknown) => {
@@ -219,6 +219,15 @@ export async function connectGame(
       if (parsed.ok && (parsed.action === "woodcutting_complete" || parsed.action === "item_drag")) {
         if (parsed.skill) applySkill(parsed.skill);
         if (parsed.inventory) applyInventory(parsed.inventory);
+        if (typeof parsed.equipmentJson === "string") {
+          applyEquipment(
+            parseEquipmentJson(parsed.equipmentJson),
+            typeof parsed.inventoryCapacity === "number" ? parsed.inventoryCapacity : undefined,
+          );
+        } else if (typeof parsed.inventoryCapacity === "number") {
+          hudState = { ...hudState, inventoryCapacity: parsed.inventoryCapacity };
+          handlers.onEquipment?.(hudState.equipment, parsed.inventoryCapacity);
+        }
       }
       handlers.onAction(parsed);
     });
