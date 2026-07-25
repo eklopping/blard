@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DEFAULT_APPEARANCE } from "@skilling-mmo/shared";
+import { DEFAULT_APPEARANCE, WORLD_TILES_W, WORLD_TILES_H, TILE_SIZE } from "@skilling-mmo/shared";
 import { ensurePlayerTexture } from "./playerTexture";
 
 /** Generate placeholder tileset + sprites at runtime (no external art). */
@@ -12,11 +12,11 @@ export class BootScene extends Phaser.Scene {
     const g = this.make.graphics({ x: 0, y: 0 }, false);
 
     g.fillStyle(0x3d6b3d);
-    g.fillRect(0, 0, 32, 32);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0x2f5530);
-    g.fillRect(0, 0, 16, 16);
-    g.fillRect(16, 16, 16, 16);
-    g.generateTexture("tile_grass", 32, 32);
+    g.fillRect(0, 0, TILE_SIZE / 2, TILE_SIZE / 2);
+    g.fillRect(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 2);
+    g.generateTexture("tile_grass", TILE_SIZE, TILE_SIZE);
     g.clear();
 
     g.fillStyle(0x5a4030);
@@ -29,10 +29,10 @@ export class BootScene extends Phaser.Scene {
     ensurePlayerTexture(this, DEFAULT_APPEARANCE);
 
     const map = {
-      width: 40,
-      height: 30,
-      tilewidth: 32,
-      tileheight: 32,
+      width: WORLD_TILES_W,
+      height: WORLD_TILES_H,
+      tilewidth: TILE_SIZE,
+      tileheight: TILE_SIZE,
       type: "map",
       orientation: "orthogonal",
       renderorder: "right-down",
@@ -40,20 +40,20 @@ export class BootScene extends Phaser.Scene {
         {
           type: "tilelayer",
           name: "ground",
-          width: 40,
-          height: 30,
-          data: Array.from({ length: 40 * 30 }, () => 1),
+          width: WORLD_TILES_W,
+          height: WORLD_TILES_H,
+          data: Array.from({ length: WORLD_TILES_W * WORLD_TILES_H }, () => 1),
         },
       ],
       tilesets: [
         {
           firstgid: 1,
           name: "grass",
-          tilewidth: 32,
-          tileheight: 32,
+          tilewidth: TILE_SIZE,
+          tileheight: TILE_SIZE,
           image: "tile_grass",
-          imagewidth: 32,
-          imageheight: 32,
+          imagewidth: TILE_SIZE,
+          imageheight: TILE_SIZE,
           tilecount: 1,
           columns: 1,
         },

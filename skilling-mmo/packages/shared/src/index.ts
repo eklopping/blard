@@ -78,6 +78,28 @@ export {
   type Appearance,
 } from "./avatar.js";
 
+export {
+  TILE_SIZE,
+  WORLD_TILES_W,
+  WORLD_TILES_H,
+  WORLD_WIDTH_PX,
+  WORLD_HEIGHT_PX,
+  MOVE_SPEED_PX_PER_SEC,
+  MOVE_TICK_MS,
+  ARRIVE_EPSILON_PX,
+  createOpenWalkGrid,
+  worldToTile,
+  tileToWorldCenter,
+  clampToWorld,
+  isWalkable,
+  snapToTileCenter,
+  stepToward,
+  findApproachPoint,
+  type Vec2,
+  type TileCoord,
+  type WalkGrid,
+} from "./nav.js";
+
 /** XP required to reach level (index = level). Level 1 starts with 0 XP. */
 export function xpForLevel(level: number): number {
   if (level <= 1) return 0;

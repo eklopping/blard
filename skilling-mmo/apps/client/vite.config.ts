@@ -4,6 +4,7 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  envDir: path.resolve(__dirname, "../.."),
   resolve: {
     alias: {
       "@skilling-mmo/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),

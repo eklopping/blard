@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { prisma, LedgerType, ChatChannel } from "@skilling-mmo/db";
 import {
   TICK_MS,
+  MOVE_TICK_MS,
   WOODCUTTING,
   SKILLS,
   levelFromXp,
@@ -21,6 +22,7 @@ import {
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
 import { ChatRateLimiter } from "../chat/rateLimit.js";
+import { MovementController } from "../nav/movement.js";
 // TODO: PvPMatchmaker enqueue(playerId) via Redis list when combat is added
 
 class PlayerState extends Schema {
@@ -64,6 +66,7 @@ interface ActiveAction {
 export class WorldRoom extends Room<WorldState> {
   maxClients = 64;
   private tickTimer?: ReturnType<typeof setInterval>;
+  private moveTimer?: ReturnType<typeof setInterval>;
   private actions = new Map<string, ActiveAction>();
   private skillHandlers: SkillHandler[] = [new WoodcuttingHandler()];
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
@@ -71,6 +74,7 @@ export class WorldRoom extends Room<WorldState> {
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
   private chatLimiter = new ChatRateLimiter();
+  private movement = new MovementController();
 
   private appearanceOf(ps: PlayerState) {
     return {
@@ -127,7 +131,8 @@ export class WorldRoom extends Room<WorldState> {
     });
 
     this.tickTimer = setInterval(() => this.tick(), TICK_MS);
-    console.log(`[WorldRoom] created — tick ${TICK_MS}ms`);
+    this.moveTimer = setInterval(() => this.moveTick(), MOVE_TICK_MS);
+    console.log(`[WorldRoom] created — skill tick ${TICK_MS}ms, move tick ${MOVE_TICK_MS}ms`);
   }
 
   async onJoin(client: Client, _options: unknown, auth?: SessionData) {
@@ -201,6 +206,7 @@ export class WorldRoom extends Room<WorldState> {
     const playerId = (client as any).playerId as string | undefined;
     if (!playerId) return;
     this.actions.delete(playerId);
+    this.movement.clear(playerId);
     const ps = this.state.players.get(playerId);
     if (ps) {
       enqueueDirtyPlayer(playerId, {
@@ -222,6 +228,7 @@ export class WorldRoom extends Room<WorldState> {
 
   onDispose() {
     if (this.tickTimer) clearInterval(this.tickTimer);
+    if (this.moveTimer) clearInterval(this.moveTimer);
   }
 
   private handleIntent(client: Client, msg: ClientMessage) {
@@ -231,61 +238,144 @@ export class WorldRoom extends Room<WorldState> {
     if (!ps) return;
 
     if (msg.type === "Move") {
-      ps.x = msg.x;
-      ps.y = msg.y;
+      const target = this.movement.setMoveTarget(playerId, msg.x, msg.y);
+      if (!target) return;
       this.actions.delete(playerId);
       ps.action = "";
-      enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
       return;
     }
 
     if (msg.type === "CancelAction") {
       this.actions.delete(playerId);
       ps.action = "";
+      this.movement.cancelMovement(playerId);
       client.send("ActionResult", { type: "ActionResult", ok: true, action: "cancel" });
       return;
     }
 
     if (msg.type === "InteractResource") {
-      const handler = this.skillHandlers.find((h) => h.canHandle(msg.resourceId));
-      if (!handler) {
-        client.send("ActionResult", {
-          type: "ActionResult",
-          ok: false,
-          reason: "unknown_resource",
-        });
-        return;
-      }
-
-      const ctx = this.buildCtx(playerId, ps);
-      const start = handler.tryStart(ctx, msg.resourceId);
-      if (!start.ok) {
-        client.send("ActionResult", {
-          type: "ActionResult",
-          ok: false,
-          reason: start.reason,
-        });
-        return;
-      }
-
-      this.actions.set(playerId, {
-        kind: "woodcutting",
-        resourceId: msg.resourceId,
-        ticksDone: 0,
-        ticksNeeded: start.ticksNeeded,
-      });
-      ps.action = "woodcutting";
-      client.send("ActionResult", {
-        type: "ActionResult",
-        ok: true,
-        action: "woodcutting",
-      });
+      this.handleInteractResource(client, playerId, ps, msg.resourceId);
       return;
     }
 
     if (msg.type === "ChatPublic" || msg.type === "ChatDm") {
       void this.handleChat(client, playerId, ps, msg);
     }
+  }
+
+  private handleInteractResource(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    resourceId: string,
+  ) {
+    const handler = this.skillHandlers.find((h) => h.canHandle(resourceId));
+    if (!handler) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_resource",
+      });
+      return;
+    }
+
+    const resource = this.state.resources.get(resourceId);
+    if (!resource) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_resource",
+      });
+      return;
+    }
+
+    const interactRange =
+      resourceId === WOODCUTTING.NORMAL_TREE.resourceId
+        ? WOODCUTTING.NORMAL_TREE.interactRange
+        : 48;
+
+    // Starting a new interact cancels any in-progress skill until arrival / in-range start
+    this.actions.delete(playerId);
+    ps.action = "";
+
+    const result = this.movement.beginInteract(
+      playerId,
+      { x: ps.x, y: ps.y },
+      resourceId,
+      { x: resource.x, y: resource.y },
+      interactRange,
+    );
+
+    if (result.inRange) {
+      this.tryStartSkill(client, playerId, ps, resourceId);
+    }
+  }
+
+  private tryStartSkill(
+    client: Client | undefined,
+    playerId: string,
+    ps: PlayerState,
+    resourceId: string,
+  ) {
+    const handler = this.skillHandlers.find((h) => h.canHandle(resourceId));
+    if (!handler) {
+      client?.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_resource",
+      });
+      return;
+    }
+
+    const ctx = this.buildCtx(playerId, ps);
+    const start = handler.tryStart(ctx, resourceId);
+    if (!start.ok) {
+      client?.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: start.reason,
+      });
+      return;
+    }
+
+    this.actions.set(playerId, {
+      kind: "woodcutting",
+      resourceId,
+      ticksDone: 0,
+      ticksNeeded: start.ticksNeeded,
+    });
+    ps.action = "woodcutting";
+    client?.send("ActionResult", {
+      type: "ActionResult",
+      ok: true,
+      action: "woodcutting",
+    });
+  }
+
+  private moveTick() {
+    this.movement.tick(
+      (playerId) => {
+        const ps = this.state.players.get(playerId);
+        return ps ? { x: ps.x, y: ps.y } : undefined;
+      },
+      (playerId, pos) => {
+        const ps = this.state.players.get(playerId);
+        if (!ps) return;
+        ps.x = pos.x;
+        ps.y = pos.y;
+        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
+      },
+      (playerId, pos, pendingInteract) => {
+        const ps = this.state.players.get(playerId);
+        if (!ps) return;
+        ps.x = pos.x;
+        ps.y = pos.y;
+        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
+        if (!pendingInteract) return;
+        const client = this.findClientByPlayerId(playerId);
+        this.tryStartSkill(client, playerId, ps, pendingInteract);
+      },
+    );
   }
 
   private findClientByPlayerId(playerId: string): Client | undefined {

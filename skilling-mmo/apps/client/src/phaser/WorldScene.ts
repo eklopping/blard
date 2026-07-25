@@ -1,5 +1,14 @@
 import Phaser from "phaser";
-import { WOODCUTTING, DEFAULT_APPEARANCE, type Appearance } from "@skilling-mmo/shared";
+import {
+  WOODCUTTING,
+  DEFAULT_APPEARANCE,
+  MOVE_SPEED_PX_PER_SEC,
+  ARRIVE_EPSILON_PX,
+  snapToTileCenter,
+  findApproachPoint,
+  stepToward,
+  type Appearance,
+} from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
 import { ensurePlayerTexture } from "./playerTexture";
@@ -7,8 +16,10 @@ import { ensurePlayerTexture } from "./playerTexture";
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
   private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
+  private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
   private tree?: Phaser.GameObjects.Image;
   private predictedTarget?: { x: number; y: number };
+  private serverPos?: { x: number; y: number };
   private chopTween?: Phaser.Tweens.Tween;
   private localId?: string;
   private callbacks!: GameCallbacks;
@@ -35,9 +46,17 @@ export class WorldScene extends Phaser.Scene {
     this.tree = this.add.image(320, 240, "tree");
     this.tree.setInteractive({ useHandCursor: true });
     this.tree.on("pointerdown", () => {
+      // Server walks into range; client only predicts when out of range
       if (this.localPlayer) {
-        this.predictedTarget = { x: this.tree!.x - 24, y: this.tree!.y };
-        this.callbacks.onMove(this.predictedTarget.x, this.predictedTarget.y);
+        const from = { x: this.localPlayer.x, y: this.localPlayer.y };
+        const res = { x: this.tree!.x, y: this.tree!.y };
+        const dist = Math.hypot(from.x - res.x, from.y - res.y);
+        if (dist > WOODCUTTING.NORMAL_TREE.interactRange) {
+          const approach = findApproachPoint(from, res, WOODCUTTING.NORMAL_TREE.interactRange);
+          if (approach) this.predictedTarget = approach;
+        } else {
+          this.predictedTarget = undefined;
+        }
       }
       this.callbacks.onInteractTree(WOODCUTTING.NORMAL_TREE.resourceId);
     });
@@ -45,34 +64,38 @@ export class WorldScene extends Phaser.Scene {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (pointer.rightButtonDown()) return;
       if (this.tree && this.tree.getBounds().contains(pointer.worldX, pointer.worldY)) return;
-      const x = pointer.worldX;
-      const y = pointer.worldY;
-      this.predictedTarget = { x, y };
-      if (this.localPlayer) {
-        this.tweens.add({
-          targets: this.localPlayer,
-          x,
-          y,
-          duration: 280,
-          ease: "Sine.easeInOut",
-        });
-      }
-      this.callbacks.onMove(x, y);
+      const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
+      if (!snapped) return;
+      this.predictedTarget = snapped;
+      this.callbacks.onMove(snapped.x, snapped.y);
     });
   }
 
   update(_t: number, dt: number) {
-    if (this.localPlayer && this.predictedTarget) {
-      const dx = this.predictedTarget.x - this.localPlayer.x;
-      const dy = this.predictedTarget.y - this.localPlayer.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 2) {
-        const speed = 0.18 * dt;
-        const step = Math.min(speed, dist);
-        this.localPlayer.x += (dx / dist) * step;
-        this.localPlayer.y += (dy / dist) * step;
+    if (!this.localPlayer || !this.predictedTarget) return;
+
+    // Soft-correct toward last known server position while predicting
+    if (this.serverPos) {
+      const err = Math.hypot(
+        this.localPlayer.x - this.serverPos.x,
+        this.localPlayer.y - this.serverPos.y,
+      );
+      if (err > 32) {
+        this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+      } else if (err > ARRIVE_EPSILON_PX) {
+        this.localPlayer.x += (this.serverPos.x - this.localPlayer.x) * 0.2;
+        this.localPlayer.y += (this.serverPos.y - this.localPlayer.y) * 0.2;
       }
     }
+
+    const { pos, arrived } = stepToward(
+      { x: this.localPlayer.x, y: this.localPlayer.y },
+      this.predictedTarget,
+      MOVE_SPEED_PX_PER_SEC,
+      dt,
+    );
+    this.localPlayer.setPosition(pos.x, pos.y);
+    if (arrived) this.predictedTarget = undefined;
   }
 
   applySnapshot(snap: Extract<ServerMessage, { type: "StateSnapshot" }>) {
@@ -86,6 +109,9 @@ export class WorldScene extends Phaser.Scene {
         p.id === this.localId,
         p.appearance ?? snap.you.appearance ?? DEFAULT_APPEARANCE,
       );
+      if (p.id === this.localId) {
+        this.serverPos = { x: p.x, y: p.y };
+      }
     }
     for (const r of snap.resources) {
       if (r.kind === "tree" && this.tree) {
@@ -98,15 +124,34 @@ export class WorldScene extends Phaser.Scene {
   reconcilePlayer(id: string, x: number, y: number) {
     const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
     if (!sprite) return;
+
     if (id === this.localId) {
+      this.serverPos = { x, y };
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
-      if (dist > 64) {
+      if (dist > 32) {
         sprite.setPosition(x, y);
         this.predictedTarget = undefined;
       }
       return;
     }
-    this.tweens.add({ targets: sprite, x, y, duration: 200, ease: "Linear" });
+
+    const prev = this.remoteTweens.get(id);
+    prev?.stop();
+    const dist = Math.hypot(sprite.x - x, sprite.y - y);
+    if (dist < ARRIVE_EPSILON_PX) {
+      sprite.setPosition(x, y);
+      this.remoteTweens.delete(id);
+      return;
+    }
+    const duration = Math.max(40, Math.min(400, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
+    const tween = this.tweens.add({
+      targets: sprite,
+      x,
+      y,
+      duration,
+      ease: "Linear",
+    });
+    this.remoteTweens.set(id, tween);
   }
 
   getLocalPos() {
@@ -115,6 +160,7 @@ export class WorldScene extends Phaser.Scene {
 
   predictChopStart() {
     if (!this.localPlayer) return;
+    this.predictedTarget = undefined;
     this.chopTween?.stop();
     this.chopTween = this.tweens.add({
       targets: this.localPlayer,
@@ -160,7 +206,9 @@ export class WorldScene extends Phaser.Scene {
       }
     } else {
       if (sprite.texture.key !== key) sprite.setTexture(key);
-      sprite.setPosition(x, y);
+      if (!isLocal || !this.predictedTarget) {
+        sprite.setPosition(x, y);
+      }
     }
   }
 }

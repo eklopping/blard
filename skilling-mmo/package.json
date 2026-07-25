@@ -16,7 +16,9 @@
     "dev:client": "npm run dev -w @skilling-mmo/client",
     "db:generate": "npm run generate -w @skilling-mmo/db",
     "db:migrate": "npm run migrate -w @skilling-mmo/db",
-    "db:deploy": "npm run deploy -w @skilling-mmo/db"
+    "db:deploy": "npm run deploy -w @skilling-mmo/db",
+    "postgres:start": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-postgres.ps1",
+    "postgres:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/stop-postgres.ps1"
   },
   "engines": {
     "node": ">=20"
