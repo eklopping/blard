@@ -57,7 +57,7 @@ export interface ConnectHandlers {
   onChatMessage: (message: ChatMessageDto) => void;
   onChatError: (error: string) => void;
   getPredictedPos: () => { x: number; y: number };
-  reconcilePlayer: (id: string, x: number, y: number) => void;
+  reconcilePlayer: (id: string, x: number, y: number, zone?: string) => void;
   removePlayer?: (id: string) => void;
 }
 
@@ -233,6 +233,7 @@ export async function connectGame(
       x: p.x,
       y: p.y,
       action: p.action || null,
+      zone: typeof p.zone === "string" ? (p.zone as PlayerSnapshot["zone"]) : undefined,
       appearance: {
         hairColor: p.hairColor,
         skinColor: p.skinColor,
@@ -253,13 +254,13 @@ export async function connectGame(
     const syncMotion = () => {
       const id = playerIdOf(p, mapKey);
       upsertOnlinePlayer(p, mapKey);
-      handlers.reconcilePlayer(id, p.x, p.y);
+      handlers.reconcilePlayer(id, p.x, p.y, typeof p.zone === "string" ? p.zone : undefined);
     };
 
     // Immediate pose + list entry
     syncMotion();
 
-    // Position / action / appearance — do NOT touch inventory HUD here
+    // Position / action / appearance / zone — do NOT touch inventory HUD here
     p.onChange(() => {
       syncMotion();
     });
@@ -281,6 +282,7 @@ export async function connectGame(
     p.listen("inventoryJson", () => maybeHud());
     p.listen("equipmentJson", () => maybeHud());
     p.listen("inventoryCapacity", () => maybeHud());
+    p.listen("zone", () => syncMotion());
   }
 
   function wireStateCallbacks(r: Room) {
@@ -329,7 +331,7 @@ export async function connectGame(
           applyLocalHudFields(p);
         }
         upsertOnlinePlayer(p, key);
-        handlers.reconcilePlayer(id, p.x, p.y);
+        handlers.reconcilePlayer(id, p.x, p.y, typeof p.zone === "string" ? p.zone : undefined);
       });
     });
 

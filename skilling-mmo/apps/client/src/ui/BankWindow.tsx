@@ -7,10 +7,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { InventorySlotDto, ItemLocation } from "@skilling-mmo/shared";
-import { BANK_SIZE, ITEM_DEFS } from "@skilling-mmo/shared";
+import { BANK_SIZE, INVENTORY_ROW_SIZE, ITEM_DEFS } from "@skilling-mmo/shared";
 import { ITEM_DRAG_MIME, encodeItemDrag, readItemDrag } from "./itemDrag";
-
-const BANK_COLS = 8;
 
 function padBankSlots(slots: InventorySlotDto[]): InventorySlotDto[] {
   const bySlot = new Map(slots.map((s) => [s.slot, s]));
@@ -127,7 +125,7 @@ export function BankWindow({
       <p className="equip-hint">Drag items from your bag to deposit, or rearrange slots here.</p>
       <div
         className="grid grid-bank bank-window-grid"
-        style={{ gridTemplateColumns: `repeat(${BANK_COLS}, 1fr)` }}
+        style={{ gridTemplateColumns: `repeat(${INVENTORY_ROW_SIZE}, 1fr)` }}
       >
         {slots.map((s) => {
           const filled = Boolean(s.itemId && s.quantity > 0);

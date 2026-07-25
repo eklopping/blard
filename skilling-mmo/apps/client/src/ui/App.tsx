@@ -386,7 +386,7 @@ export function App() {
               setChatError(error === "rate_limited" ? "slow down" : error);
             }
           },
-          getPredictedPos: () => bridge.current?.getLocalPos() ?? { x: 208, y: 208 },
+          getPredictedPos: () => bridge.current?.getLocalPos() ?? { x: 640, y: 480 },
           reconcilePlayer: (id, x, y) => bridge.current?.reconcilePlayer(id, x, y),
           removePlayer: (id) => bridge.current?.removePlayer(id),
         });

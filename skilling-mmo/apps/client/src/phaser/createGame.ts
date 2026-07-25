@@ -12,7 +12,7 @@ export interface GameCallbacks {
 export interface GameBridge {
   destroy: () => void;
   applySnapshot: (snap: Extract<ServerMessage, { type: "StateSnapshot" }>) => void;
-  reconcilePlayer: (id: string, x: number, y: number) => void;
+  reconcilePlayer: (id: string, x: number, y: number, zone?: string) => void;
   removePlayer: (id: string) => void;
   clearPlayers: () => void;
   getLocalPos: () => { x: number; y: number };
@@ -58,10 +58,10 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
       game.destroy(true);
     },
     applySnapshot: (snap) => world?.applySnapshot(snap),
-    reconcilePlayer: (id, x, y) => world?.reconcilePlayer(id, x, y),
+    reconcilePlayer: (id, x, y, zone) => world?.reconcilePlayer(id, x, y, zone),
     removePlayer: (id) => world?.removePlayer(id),
     clearPlayers: () => world?.clearPlayers(),
-    getLocalPos: () => world?.getLocalPos() ?? { x: 208, y: 208 },
+    getLocalPos: () => world?.getLocalPos() ?? { x: 640, y: 480 },
     onActionResult: (msg) => world?.onActionResult(msg),
   };
 }

@@ -5,13 +5,19 @@ import {
   ARRIVE_EPSILON_PX,
   ACTION_REPEAT_COOLDOWN_MS,
   ZONE_DEFS,
+  ZONES,
   NPC_KINDS,
+  WORLD_WIDTH_PX,
+  WORLD_HEIGHT_PX,
   snapToTileCenter,
   findClosestSideApproach,
   stepToward,
+  zoneForResource,
+  isZoneId,
   type Appearance,
   type NpcSnapshot,
   type ResourceSnapshot,
+  type ZoneId,
 } from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
@@ -51,8 +57,14 @@ export class WorldScene extends Phaser.Scene {
   private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
   private walkState = new Map<string, WalkState>();
   private lastServerPos = new Map<string, { x: number; y: number }>();
+  private playerZones = new Map<string, ZoneId>();
   private resourceSprites = new Map<string, Phaser.GameObjects.Image>();
   private npcSprites = new Map<string, Phaser.GameObjects.Image>();
+  private allResources: ResourceSnapshot[] = [];
+  private allNpcs: NpcSnapshot[] = [];
+  private groundOverlay?: Phaser.GameObjects.Rectangle;
+  private groundLayer?: Phaser.Tilemaps.TilemapLayer | null;
+  private localZone: ZoneId = ZONES.TOWN;
   private predictedTarget?: { x: number; y: number };
   private serverPos?: { x: number; y: number };
   private chopTween?: Phaser.Tweens.Tween;
@@ -86,24 +98,22 @@ export class WorldScene extends Phaser.Scene {
     const map = this.make.tilemap({ key: "world" });
     const tileset = map.addTilesetImage("grass", "tile_grass");
     if (tileset) {
-      map.createLayer("ground", tileset, 0, 0);
+      this.groundLayer = map.createLayer("ground", tileset, 0, 0);
     }
 
-    // Soft zone ground markers (bare-bones region tint)
-    for (const zone of Object.values(ZONE_DEFS)) {
-      const marker = this.add.rectangle(
-        zone.spawn.x,
-        zone.spawn.y,
-        220,
-        180,
-        zone.groundTint,
-        0.28,
-      );
-      marker.setDepth(0);
-    }
+    // Full-map tint — color swaps per zone so each area reads as its own map
+    this.groundOverlay = this.add.rectangle(
+      WORLD_WIDTH_PX / 2,
+      WORLD_HEIGHT_PX / 2,
+      WORLD_WIDTH_PX,
+      WORLD_HEIGHT_PX,
+      ZONE_DEFS[ZONES.TOWN].groundTint,
+      0.35,
+    );
+    this.groundOverlay.setDepth(1);
 
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-    this.cameras.main.setBackgroundColor("#1a2e1a");
+    this.applyZoneVisuals(ZONES.TOWN);
     this.cameras.main.setRoundPixels(true);
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
@@ -117,12 +127,32 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
+  private applyZoneVisuals(zone: ZoneId) {
+    const def = ZONE_DEFS[zone];
+    this.cameras.main.setBackgroundColor(def.skyColor);
+    this.groundOverlay?.setFillStyle(def.groundTint, 0.35);
+    this.groundLayer?.setTint(def.groundTint);
+  }
+
+  /** Switch the active map view (only entities in this zone are shown). */
+  setLocalZone(zone: string) {
+    if (!isZoneId(zone)) return;
+    if (zone === this.localZone) return;
+    this.localZone = zone;
+    this.applyZoneVisuals(zone);
+    this.cancelEngagement();
+    this.predictedTarget = undefined;
+    this.syncResources(this.allResources);
+    this.syncNpcs(this.allNpcs);
+    this.refreshPlayerVisibility();
+  }
+
   private hitWorldEntity(wx: number, wy: number): boolean {
     for (const sprite of this.resourceSprites.values()) {
-      if (sprite.getBounds().contains(wx, wy)) return true;
+      if (sprite.visible && sprite.getBounds().contains(wx, wy)) return true;
     }
     for (const sprite of this.npcSprites.values()) {
-      if (sprite.getBounds().contains(wx, wy)) return true;
+      if (sprite.visible && sprite.getBounds().contains(wx, wy)) return true;
     }
     return false;
   }
@@ -140,6 +170,7 @@ export class WorldScene extends Phaser.Scene {
     this.stopAllRemoteTweens();
 
     for (const [id, pos] of this.lastServerPos) {
+      if (!this.isPlayerVisible(id)) continue;
       const sprite =
         this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
       if (!sprite) continue;
@@ -179,6 +210,10 @@ export class WorldScene extends Phaser.Scene {
 
   applySnapshot(snap: Extract<ServerMessage, { type: "StateSnapshot" }>) {
     this.localId = snap.you.playerId;
+    if (snap.you.zone && isZoneId(snap.you.zone)) {
+      this.setLocalZone(snap.you.zone);
+    }
+
     const present = new Set(snap.players.map((p) => p.id));
 
     for (const id of [...this.remotePlayers.keys()]) {
@@ -186,6 +221,17 @@ export class WorldScene extends Phaser.Scene {
     }
 
     for (const p of snap.players) {
+      if (p.zone && isZoneId(p.zone)) this.playerZones.set(p.id, p.zone);
+      else if (p.id === this.localId) this.playerZones.set(p.id, this.localZone);
+
+      this.lastServerPos.set(p.id, { x: p.x, y: p.y });
+      if (p.id === this.localId) this.serverPos = { x: p.x, y: p.y };
+
+      if (!this.isPlayerVisible(p.id)) {
+        this.hidePlayerSprite(p.id);
+        continue;
+      }
+
       this.ensurePlayer(
         p.id,
         p.name,
@@ -194,20 +240,44 @@ export class WorldScene extends Phaser.Scene {
         p.id === this.localId,
         p.appearance ?? snap.you.appearance ?? DEFAULT_APPEARANCE,
       );
-      this.lastServerPos.set(p.id, { x: p.x, y: p.y });
-      if (p.id === this.localId) {
-        this.serverPos = { x: p.x, y: p.y };
-      }
     }
 
-    this.syncResources(snap.resources ?? []);
-    this.syncNpcs(snap.npcs ?? []);
+    this.allResources = snap.resources ?? [];
+    this.allNpcs = snap.npcs ?? [];
+    this.syncResources(this.allResources);
+    this.syncNpcs(this.allNpcs);
     this.refreshResourceAlpha();
+  }
+
+  private isPlayerVisible(id: string): boolean {
+    if (id === this.localId) return true;
+    const z = this.playerZones.get(id);
+    return !z || z === this.localZone;
+  }
+
+  private hidePlayerSprite(id: string) {
+    if (id === this.localId) return;
+    this.remoteTweens.get(id)?.stop();
+    this.remoteTweens.delete(id);
+    const sprite = this.remotePlayers.get(id);
+    if (sprite) {
+      sprite.destroy();
+      this.remotePlayers.delete(id);
+    }
+    this.walkState.delete(id);
+  }
+
+  private refreshPlayerVisibility() {
+    for (const id of [...this.remotePlayers.keys()]) {
+      if (!this.isPlayerVisible(id)) this.hidePlayerSprite(id);
+    }
   }
 
   private syncResources(resources: ResourceSnapshot[]) {
     const seen = new Set<string>();
     for (const r of resources) {
+      const resZone = zoneForResource(r.id);
+      if (resZone && resZone !== this.localZone) continue;
       seen.add(r.id);
       let sprite = this.resourceSprites.get(r.id);
       const tex = textureForResourceKind(r.kind);
@@ -238,6 +308,7 @@ export class WorldScene extends Phaser.Scene {
   private syncNpcs(npcs: NpcSnapshot[]) {
     const seen = new Set<string>();
     for (const n of npcs) {
+      if (n.zoneId !== this.localZone) continue;
       seen.add(n.id);
       let sprite = this.npcSprites.get(n.id);
       const tex = textureForNpcKind(n.kind);
@@ -264,9 +335,33 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  reconcilePlayer(id: string, x: number, y: number) {
+  reconcilePlayer(id: string, x: number, y: number, zone?: string) {
+    if (zone && isZoneId(zone)) {
+      this.playerZones.set(id, zone);
+      if (id === this.localId && zone !== this.localZone) {
+        this.setLocalZone(zone);
+      }
+      if (id !== this.localId && zone !== this.localZone) {
+        this.hidePlayerSprite(id);
+        this.lastServerPos.set(id, { x, y });
+        return;
+      }
+      if (id !== this.localId && zone === this.localZone && !this.remotePlayers.has(id)) {
+        this.ensurePlayer(id, "", x, y, false, DEFAULT_APPEARANCE);
+      }
+    }
+
+    if (!this.isPlayerVisible(id)) {
+      this.hidePlayerSprite(id);
+      this.lastServerPos.set(id, { x, y });
+      return;
+    }
+
     const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
-    if (!sprite) return;
+    if (!sprite) {
+      this.lastServerPos.set(id, { x, y });
+      return;
+    }
 
     this.lastServerPos.set(id, { x, y });
 
@@ -287,8 +382,8 @@ export class WorldScene extends Phaser.Scene {
         return;
       }
 
-      // Teleports / large snaps (zone travel)
-      if (dist > 256) {
+      // Teleports / zone travel
+      if (dist > 128) {
         sprite.setPosition(x, y);
         this.predictedTarget = undefined;
         this.setWalking(id, false);
@@ -323,8 +418,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // Remotes teleporting between zones
-    if (dist > 256) {
+    if (dist > 128) {
       sprite.setPosition(x, y);
       this.remoteTweens.delete(id);
       this.setWalking(id, false);
@@ -349,7 +443,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   getLocalPos() {
-    return { x: this.localPlayer?.x ?? 208, y: this.localPlayer?.y ?? 208 };
+    const spawn = ZONE_DEFS[this.localZone].spawn;
+    return { x: this.localPlayer?.x ?? spawn.x, y: this.localPlayer?.y ?? spawn.y };
   }
 
   onActionResult(msg: ActionResultMsg) {
@@ -635,6 +730,7 @@ export class WorldScene extends Phaser.Scene {
     this.remoteTweens.delete(id);
     this.walkState.delete(id);
     this.lastServerPos.delete(id);
+    this.playerZones.delete(id);
     const sprite = this.remotePlayers.get(id);
     if (sprite) {
       sprite.destroy();
@@ -656,6 +752,8 @@ export class WorldScene extends Phaser.Scene {
     this.serverPos = undefined;
     this.acting = false;
     this.engagedResourceId = null;
+    this.playerZones.clear();
+    this.localZone = ZONES.TOWN;
     this.stopChopVfx(false);
   }
 

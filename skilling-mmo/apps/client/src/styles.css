@@ -259,7 +259,7 @@ body,
 .bank-window {
   position: fixed;
   z-index: 40;
-  width: min(420px, 92vw);
+  width: min(360px, 92vw);
   max-height: min(70vh, 560px);
   display: flex;
   flex-direction: column;
@@ -295,14 +295,23 @@ body,
 .bank-window-grid {
   overflow: auto;
   padding: 0.55rem;
-  gap: 4px;
+  gap: 0.25rem;
   flex: 1;
   min-height: 0;
+  scrollbar-width: none; /* Firefox — scrollable, no bar */
+  -ms-overflow-style: none; /* IE/legacy Edge */
+}
+
+.bank-window-grid::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .bank-window .slot {
-  font-size: 0.65rem;
-  min-height: 2.6rem;
+  font-size: 0.58rem;
+  min-height: 2.4rem;
+  padding: 1px;
 }
 
 .equip-window-title {
