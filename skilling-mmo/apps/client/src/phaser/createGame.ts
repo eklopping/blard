@@ -5,7 +5,8 @@ import type { ServerMessage } from "@skilling-mmo/shared";
 
 export interface GameCallbacks {
   onMove: (x: number, y: number) => void;
-  onInteractTree: (resourceId: string) => void;
+  onInteractResource: (resourceId: string) => void;
+  onInteractNpc: (npcId: string) => void;
 }
 
 export interface GameBridge {
@@ -60,7 +61,7 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
     reconcilePlayer: (id, x, y) => world?.reconcilePlayer(id, x, y),
     removePlayer: (id) => world?.removePlayer(id),
     clearPlayers: () => world?.clearPlayers(),
-    getLocalPos: () => world?.getLocalPos() ?? { x: 160, y: 160 },
+    getLocalPos: () => world?.getLocalPos() ?? { x: 208, y: 208 },
     onActionResult: (msg) => world?.onActionResult(msg),
   };
 }

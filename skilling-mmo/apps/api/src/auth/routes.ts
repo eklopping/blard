@@ -8,6 +8,7 @@ import {
   PROFESSIONS,
   PROFESSION_STARTING_SKILLS,
   DEFAULT_APPEARANCE,
+  TOWN_SPAWN,
   professionStarterBagItems,
   type ProfessionId,
   type SkillId,
@@ -103,8 +104,8 @@ async function createPlayerForAccount(
       sortOrder: existingCount,
       coins: 100,
       equipmentJson: "{}",
-      x: 160,
-      y: 160,
+      x: TOWN_SPAWN.x,
+      y: TOWN_SPAWN.y,
       skills: {
         create: skills.map((skill) => ({ skill, level: 1, xp: 0 })),
       },

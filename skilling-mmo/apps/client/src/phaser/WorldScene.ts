@@ -1,14 +1,17 @@
 import Phaser from "phaser";
 import {
-  WOODCUTTING,
   DEFAULT_APPEARANCE,
   MOVE_SPEED_PX_PER_SEC,
   ARRIVE_EPSILON_PX,
   ACTION_REPEAT_COOLDOWN_MS,
+  ZONE_DEFS,
+  NPC_KINDS,
   snapToTileCenter,
   findClosestSideApproach,
   stepToward,
   type Appearance,
+  type NpcSnapshot,
+  type ResourceSnapshot,
 } from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
@@ -29,13 +32,27 @@ interface WalkState {
   moving: boolean;
 }
 
+function textureForResourceKind(kind: string): string {
+  if (kind === "rock") return "rock";
+  if (kind === "crop") return "crop";
+  return "tree";
+}
+
+function textureForNpcKind(kind: string): string {
+  if (kind === NPC_KINDS.SHOPKEEPER) return "npc_shop";
+  if (kind === NPC_KINDS.STOREHOUSE) return "npc_store";
+  if (kind === NPC_KINDS.RETURN) return "portal_return";
+  return "portal_exit";
+}
+
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
   private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
   private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
   private walkState = new Map<string, WalkState>();
   private lastServerPos = new Map<string, { x: number; y: number }>();
-  private tree?: Phaser.GameObjects.Image;
+  private resourceSprites = new Map<string, Phaser.GameObjects.Image>();
+  private npcSprites = new Map<string, Phaser.GameObjects.Image>();
   private predictedTarget?: { x: number; y: number };
   private serverPos?: { x: number; y: number };
   private chopTween?: Phaser.Tweens.Tween;
@@ -72,33 +89,44 @@ export class WorldScene extends Phaser.Scene {
       map.createLayer("ground", tileset, 0, 0);
     }
 
+    // Soft zone ground markers (bare-bones region tint)
+    for (const zone of Object.values(ZONE_DEFS)) {
+      const marker = this.add.rectangle(
+        zone.spawn.x,
+        zone.spawn.y,
+        220,
+        180,
+        zone.groundTint,
+        0.28,
+      );
+      marker.setDepth(0);
+    }
+
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.cameras.main.setBackgroundColor("#1a2e1a");
     this.cameras.main.setRoundPixels(true);
 
-    this.tree = this.add.image(320, 240, "tree");
-    this.tree.setOrigin(0.5, 1);
-    this.tree.setInteractive({ useHandCursor: true });
-    this.tree.on("pointerdown", () => {
-      this.tryEngageResource(WOODCUTTING.NORMAL_TREE.resourceId);
-    });
-
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (pointer.rightButtonDown()) return;
-      if (this.tree && this.tree.getBounds().contains(pointer.worldX, pointer.worldY)) return;
+      if (this.hitWorldEntity(pointer.worldX, pointer.worldY)) return;
       const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
       if (!snapped) return;
-      // Click away cancels the gather loop and any in-progress action
       this.cancelEngagement();
       this.predictedTarget = snapped;
       this.callbacks.onMove(snapped.x, snapped.y);
     });
   }
 
-  /**
-   * Browser backgrounded the tab — stop client prediction so we don't freeze
-   * mid-walk while rAF is throttled. Server keeps moving; we follow on resume.
-   */
+  private hitWorldEntity(wx: number, wy: number): boolean {
+    for (const sprite of this.resourceSprites.values()) {
+      if (sprite.getBounds().contains(wx, wy)) return true;
+    }
+    for (const sprite of this.npcSprites.values()) {
+      if (sprite.getBounds().contains(wx, wy)) return true;
+    }
+    return false;
+  }
+
   onTabHidden() {
     this.tabHidden = true;
     this.predictedTarget = undefined;
@@ -106,7 +134,6 @@ export class WorldScene extends Phaser.Scene {
     this.stopAllRemoteTweens();
   }
 
-  /** Tab focused again — snap everyone to the latest server poses. */
   onTabVisible() {
     this.tabHidden = false;
     this.predictedTarget = undefined;
@@ -128,12 +155,10 @@ export class WorldScene extends Phaser.Scene {
   update(_t: number, dt: number) {
     this.refreshResourceAlpha();
 
-    // Don't run prediction / walk anims while the tab is backgrounded
     if (this.tabHidden || document.hidden) return;
 
     this.tickWalkAnims(dt);
 
-    // Stay locked in place while performing an action
     if (this.acting) return;
     if (!this.localPlayer || !this.predictedTarget) return;
 
@@ -156,7 +181,6 @@ export class WorldScene extends Phaser.Scene {
     this.localId = snap.you.playerId;
     const present = new Set(snap.players.map((p) => p.id));
 
-    // Drop sprites for anyone no longer in the room (disconnects / profile swap)
     for (const id of [...this.remotePlayers.keys()]) {
       if (!present.has(id)) this.removePlayer(id);
     }
@@ -175,12 +199,69 @@ export class WorldScene extends Phaser.Scene {
         this.serverPos = { x: p.x, y: p.y };
       }
     }
-    for (const r of snap.resources) {
-      if (r.kind === "tree" && this.tree) {
-        this.tree.setPosition(r.x, r.y);
+
+    this.syncResources(snap.resources ?? []);
+    this.syncNpcs(snap.npcs ?? []);
+    this.refreshResourceAlpha();
+  }
+
+  private syncResources(resources: ResourceSnapshot[]) {
+    const seen = new Set<string>();
+    for (const r of resources) {
+      seen.add(r.id);
+      let sprite = this.resourceSprites.get(r.id);
+      const tex = textureForResourceKind(r.kind);
+      if (!sprite) {
+        sprite = this.add.image(r.x, r.y, tex);
+        sprite.setOrigin(0.5, 1);
+        sprite.setDepth(5);
+        sprite.setInteractive({ useHandCursor: true });
+        sprite.on("pointerdown", () => {
+          this.tryEngageResource(r.id);
+        });
+        this.resourceSprites.set(r.id, sprite);
+      } else {
+        sprite.setTexture(tex);
+        sprite.setPosition(r.x, r.y);
+      }
+      sprite.setVisible(r.available);
+      sprite.setData("resourceId", r.id);
+    }
+    for (const [id, sprite] of this.resourceSprites) {
+      if (!seen.has(id)) {
+        sprite.destroy();
+        this.resourceSprites.delete(id);
       }
     }
-    this.refreshResourceAlpha();
+  }
+
+  private syncNpcs(npcs: NpcSnapshot[]) {
+    const seen = new Set<string>();
+    for (const n of npcs) {
+      seen.add(n.id);
+      let sprite = this.npcSprites.get(n.id);
+      const tex = textureForNpcKind(n.kind);
+      if (!sprite) {
+        sprite = this.add.image(n.x, n.y, tex);
+        sprite.setOrigin(0.5, 1);
+        sprite.setDepth(6);
+        sprite.setInteractive({ useHandCursor: true });
+        const npcId = n.id;
+        sprite.on("pointerdown", () => {
+          this.tryEngageNpc(npcId, n.x, n.y);
+        });
+        this.npcSprites.set(n.id, sprite);
+      } else {
+        sprite.setTexture(tex);
+        sprite.setPosition(n.x, n.y);
+      }
+    }
+    for (const [id, sprite] of this.npcSprites) {
+      if (!seen.has(id)) {
+        sprite.destroy();
+        this.npcSprites.delete(id);
+      }
+    }
   }
 
   reconcilePlayer(id: string, x: number, y: number) {
@@ -189,7 +270,6 @@ export class WorldScene extends Phaser.Scene {
 
     this.lastServerPos.set(id, { x, y });
 
-    // While backgrounded, always hard-follow server (no prediction / tweens)
     if (this.tabHidden || document.hidden) {
       if (id === this.localId) this.serverPos = { x, y };
       sprite.setPosition(x, y);
@@ -202,8 +282,15 @@ export class WorldScene extends Phaser.Scene {
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
 
       if (this.acting) {
-        // Hard-lock local sprite to server while acting
         if (dist > ARRIVE_EPSILON_PX) sprite.setPosition(x, y);
+        this.setWalking(id, false);
+        return;
+      }
+
+      // Teleports / large snaps (zone travel)
+      if (dist > 256) {
+        sprite.setPosition(x, y);
+        this.predictedTarget = undefined;
         this.setWalking(id, false);
         return;
       }
@@ -236,9 +323,16 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
+    // Remotes teleporting between zones
+    if (dist > 256) {
+      sprite.setPosition(x, y);
+      this.remoteTweens.delete(id);
+      this.setWalking(id, false);
+      return;
+    }
+
     const prevX = sprite.x;
     this.noteMotion(id, prevX, x, true);
-    // Match ~50ms Colyseus patches so remotes stay continuous instead of lagging
     const duration = Math.max(40, Math.min(90, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
     const tween = this.tweens.add({
       targets: sprite,
@@ -255,12 +349,11 @@ export class WorldScene extends Phaser.Scene {
   }
 
   getLocalPos() {
-    return { x: this.localPlayer?.x ?? 160, y: this.localPlayer?.y ?? 160 };
+    return { x: this.localPlayer?.x ?? 208, y: this.localPlayer?.y ?? 208 };
   }
 
-  /** Handle server ActionResult — drives chop VFX and the client gather loop. */
   onActionResult(msg: ActionResultMsg) {
-    if (msg.ok && msg.action === "woodcutting") {
+    if (msg.ok && msg.action === "gather") {
       this.acting = true;
       this.predictedTarget = undefined;
       if (this.localId) this.setWalking(this.localId, false);
@@ -268,13 +361,26 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    if (msg.ok && msg.action === "woodcutting_complete") {
+    if (msg.ok && msg.action === "gather_complete") {
       this.acting = false;
-      this.stopChopVfx(true);
-      const resourceId = msg.resourceId ?? this.engagedResourceId ?? WOODCUTTING.NORMAL_TREE.resourceId;
-      this.beginClientCooldown(resourceId);
-      if (this.engagedResourceId === resourceId) {
-        this.scheduleRepeat(resourceId);
+      this.stopChopVfx(true, msg.resourceId);
+      const resourceId = msg.resourceId ?? this.engagedResourceId;
+      if (resourceId) {
+        this.beginClientCooldown(resourceId);
+        if (this.engagedResourceId === resourceId) {
+          this.scheduleRepeat(resourceId);
+        }
+      }
+      return;
+    }
+
+    if (msg.ok && msg.action === "travel") {
+      this.cancelEngagement();
+      this.predictedTarget = undefined;
+      this.acting = false;
+      this.stopChopVfx(false);
+      if (this.localPlayer && this.serverPos) {
+        this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
       }
       return;
     }
@@ -298,9 +404,10 @@ export class WorldScene extends Phaser.Scene {
     this.engagedResourceId = resourceId;
     this.clearRepeatTimer();
 
-    if (this.localPlayer && this.tree && resourceId === WOODCUTTING.NORMAL_TREE.resourceId) {
+    const sprite = this.resourceSprites.get(resourceId);
+    if (this.localPlayer && sprite) {
       const from = { x: this.localPlayer.x, y: this.localPlayer.y };
-      const res = { x: this.tree.x, y: this.tree.y };
+      const res = { x: sprite.x, y: sprite.y };
       const approach = findClosestSideApproach(from, res);
       if (approach) {
         const atStand =
@@ -309,7 +416,21 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
-    this.callbacks.onInteractTree(resourceId);
+    this.callbacks.onInteractResource(resourceId);
+  }
+
+  private tryEngageNpc(npcId: string, x: number, y: number) {
+    this.cancelEngagement();
+    if (this.localPlayer) {
+      const from = { x: this.localPlayer.x, y: this.localPlayer.y };
+      const approach = findClosestSideApproach(from, { x, y });
+      if (approach) {
+        const atStand =
+          Math.hypot(from.x - approach.x, from.y - approach.y) <= ARRIVE_EPSILON_PX + 4;
+        this.predictedTarget = atStand ? undefined : approach;
+      }
+    }
+    this.callbacks.onInteractNpc(npcId);
   }
 
   private cancelEngagement() {
@@ -343,7 +464,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.engagedResourceId !== resourceId) return;
       this.cooldownUntil.delete(resourceId);
       this.refreshResourceAlpha();
-      this.callbacks.onInteractTree(resourceId);
+      this.callbacks.onInteractResource(resourceId);
     }, delay);
   }
 
@@ -355,9 +476,9 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private refreshResourceAlpha() {
-    if (!this.tree) return;
-    const id = WOODCUTTING.NORMAL_TREE.resourceId;
-    this.tree.setAlpha(this.isOnCooldown(id) ? COOLDOWN_ALPHA : 1);
+    for (const [id, sprite] of this.resourceSprites) {
+      sprite.setAlpha(this.isOnCooldown(id) ? COOLDOWN_ALPHA : 1);
+    }
   }
 
   private startChopVfx() {
@@ -372,13 +493,15 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
-  private stopChopVfx(bounceTree: boolean) {
+  private stopChopVfx(bounceResource: boolean, resourceId?: string | null) {
     this.chopTween?.stop();
     this.chopTween = undefined;
     if (this.localPlayer) this.localPlayer.angle = 0;
-    if (bounceTree && this.tree) {
+    const id = resourceId ?? this.engagedResourceId;
+    const sprite = id ? this.resourceSprites.get(id) : undefined;
+    if (bounceResource && sprite) {
       this.tweens.add({
-        targets: this.tree,
+        targets: sprite,
         scaleX: 1.1,
         scaleY: 0.9,
         duration: 80,
@@ -418,12 +541,10 @@ export class WorldScene extends Phaser.Scene {
       const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
       if (!sprite) continue;
 
-      // Local predicted walk while a target exists
       if (id === this.localId && this.predictedTarget && !this.acting) {
         st.moving = true;
       }
 
-      // Remotes still tweening count as walking
       if (this.remoteTweens.has(id)) {
         st.moving = true;
       }
@@ -444,7 +565,6 @@ export class WorldScene extends Phaser.Scene {
       const tex = st.frame === 0 ? st.textures.walk0 : st.textures.walk1;
       if (sprite.texture.key !== tex) sprite.setTexture(tex);
 
-      // Light bob / squash so the stride reads even at low res
       const t = (st.phaseMs / WALK_FRAME_MS + st.frame) * Math.PI;
       const bob = Math.sin(t) * 0.06;
       sprite.setScale(1, 1 - Math.abs(bob));
@@ -497,7 +617,11 @@ export class WorldScene extends Phaser.Scene {
           moving: false,
         });
       }
-      if (sprite.texture.key !== textures.idle && sprite.texture.key !== textures.walk0 && sprite.texture.key !== textures.walk1) {
+      if (
+        sprite.texture.key !== textures.idle &&
+        sprite.texture.key !== textures.walk0 &&
+        sprite.texture.key !== textures.walk1
+      ) {
         sprite.setTexture(textures.idle);
       }
       if (!isLocal || (!this.predictedTarget && !this.acting)) {
@@ -506,7 +630,6 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** Remove a player sprite (disconnect, profile swap, or roster sync). */
   removePlayer(id: string) {
     this.remoteTweens.get(id)?.stop();
     this.remoteTweens.delete(id);
@@ -522,7 +645,6 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** Wipe all character sprites — used when leaving the world / swapping profiles. */
   clearPlayers() {
     this.stopAllRemoteTweens();
     for (const id of [...this.remotePlayers.keys()]) {

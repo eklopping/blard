@@ -5,6 +5,8 @@ import { AuthPanel } from "./AuthPanel";
 import { CharacterSelectPanel } from "./CharacterSelectPanel";
 import { LobbyShell } from "./LobbyShell";
 import { GameHud, type HudPanel } from "./GameHud";
+import { TravelMap } from "./TravelMap";
+import { ShopPanel } from "./ShopPanel";
 import { connectGame, type GameConnection } from "../net/colyseusClient";
 import type {
   InventorySlotDto,
@@ -15,6 +17,7 @@ import type {
   PlayerSnapshot,
   EquipmentLoadout,
   ItemLocation,
+  ZoneId,
 } from "@skilling-mmo/shared";
 import { DEFAULT_APPEARANCE, INVENTORY_BASE_SLOTS, isSystemChatMessage } from "@skilling-mmo/shared";
 import {
@@ -41,6 +44,8 @@ export function App() {
     () => loadSession() ?? migrateLegacyAuth(),
   );
   const [panel, setPanel] = useState<Panel>("inventory");
+  const [showTravel, setShowTravel] = useState(false);
+  const [showShop, setShowShop] = useState(false);
   const [inventory, setInventory] = useState<InventorySlotDto[]>([]);
   const [inventoryCapacity, setInventoryCapacity] = useState(INVENTORY_BASE_SLOTS);
   const [equipment, setEquipment] = useState<EquipmentLoadout>({});
@@ -259,8 +264,10 @@ export function App() {
     if (!gameHost.current || bridge.current) return;
     bridge.current = createGame(gameHost.current, {
       onMove: (x, y) => conn.current?.sendIntent({ type: "Move", x, y }),
-      onInteractTree: (resourceId) =>
+      onInteractResource: (resourceId) =>
         conn.current?.sendIntent({ type: "InteractResource", resourceId }),
+      onInteractNpc: (npcId) =>
+        conn.current?.sendIntent({ type: "InteractNpc", npcId }),
     });
     return () => {
       bridge.current?.destroy();
@@ -328,6 +335,12 @@ export function App() {
               }, 2200);
             }
           },
+          onOpenPanel: (openPanel) => {
+            if (cancelled) return;
+            if (openPanel === "travel") setShowTravel(true);
+            else if (openPanel === "shop") setShowShop(true);
+            else if (openPanel === "bank") setPanel("bank");
+          },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);
           },
@@ -369,7 +382,7 @@ export function App() {
               setChatError(error === "rate_limited" ? "slow down" : error);
             }
           },
-          getPredictedPos: () => bridge.current?.getLocalPos() ?? { x: 160, y: 160 },
+          getPredictedPos: () => bridge.current?.getLocalPos() ?? { x: 208, y: 208 },
           reconcilePlayer: (id, x, y) => bridge.current?.reconcilePlayer(id, x, y),
           removePlayer: (id) => bridge.current?.removePlayer(id),
         });
@@ -518,6 +531,7 @@ export function App() {
                 const d = await r.json();
                 setInventory(d.slots);
               }
+              conn.current?.sendIntent({ type: "SyncInventory" });
             }}
             onProfiles={switchCharacter}
             onLogout={logoutAccount}
@@ -539,6 +553,28 @@ export function App() {
             }}
           />
         )}
+        {showTravel ? (
+          <TravelMap
+            onTravel={(zone: ZoneId) => {
+              conn.current?.sendIntent({ type: "TravelZone", zone });
+              setShowTravel(false);
+            }}
+            onClose={() => setShowTravel(false)}
+          />
+        ) : null}
+        {showShop ? (
+          <ShopPanel
+            coins={coins}
+            inventory={inventory}
+            onBuy={(itemId, quantity) => {
+              conn.current?.sendIntent({ type: "ShopBuy", itemId, quantity });
+            }}
+            onSell={(itemId, quantity) => {
+              conn.current?.sendIntent({ type: "ShopSell", itemId, quantity });
+            }}
+            onClose={() => setShowShop(false)}
+          />
+        ) : null}
       </div>
     </>
   );

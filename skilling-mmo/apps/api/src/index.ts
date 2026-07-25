@@ -17,6 +17,8 @@ async function seedItems() {
   const items = [
     { id: "logs", name: "Logs", stackable: true, maxStack: 100 },
     { id: "oak_logs", name: "Oak logs", stackable: true, maxStack: 100 },
+    { id: "stone", name: "Stone", stackable: true, maxStack: 100 },
+    { id: "wheat", name: "Wheat", stackable: true, maxStack: 100 },
     { id: "coins", name: "Coins", stackable: true, maxStack: 100 },
     { id: "basic_backpack", name: "Basic Backpack", stackable: false, maxStack: 1 },
     { id: "basic_axe", name: "Basic Axe", stackable: false, maxStack: 1 },

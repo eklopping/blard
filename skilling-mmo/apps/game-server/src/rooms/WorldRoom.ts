@@ -10,6 +10,8 @@ import {
   TICK_MS,
   MOVE_TICK_MS,
   WOODCUTTING,
+  MINING,
+  FARMING,
   SKILLS,
   INVENTORY_SIZE,
   maxStackFor,
@@ -21,13 +23,32 @@ import {
   inventoryCapacity,
   parseEquipmentJson,
   serializeEquipment,
+  ZONE_DEFS,
+  ZONES,
+  TOWN_SPAWN,
+  TRAVEL_ZONES,
+  NPC_KINDS,
+  findNpc,
+  isZoneId,
+  zoneForResource,
+  shopBuyPrice,
+  shopSellPrice,
+  ITEM_DEFS,
   type ClientMessage,
   type ChatMessageDto,
   type EquipmentLoadout,
   type ItemLocation,
+  type ZoneId,
+  type NpcSnapshot,
   SYSTEM_CHAT_SENDER_ID,
 } from "@skilling-mmo/shared";
-import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
+import {
+  WoodcuttingHandler,
+  MiningHandler,
+  FarmingHandler,
+  type SkillContext,
+  type SkillHandler,
+} from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
 import { ChatRateLimiter } from "../chat/rateLimit.js";
 import { MovementController } from "../nav/movement.js";
@@ -40,6 +61,7 @@ class PlayerState extends Schema {
   @type("number") x: number = 0;
   @type("number") y: number = 0;
   @type("string") action: string = "";
+  @type("string") zone: string = ZONES.TOWN;
   @type("string") hairColor: string = "#1a1a1a";
   @type("string") skinColor: string = "#e899a3";
   @type("string") shirtColor: string = "#0f1e3d";
@@ -47,6 +69,10 @@ class PlayerState extends Schema {
   /** Live HUD fields — synced via Colyseus state (same path as position). */
   @type("number") woodcuttingLevel: number = 1;
   @type("number") woodcuttingXp: number = 0;
+  @type("number") miningLevel: number = 1;
+  @type("number") miningXp: number = 0;
+  @type("number") farmingLevel: number = 1;
+  @type("number") farmingXp: number = 0;
   @type("number") coins: number = 0;
   @type("number") inventoryCapacity: number = 6;
   @type("string") inventoryJson: string = "[]";
@@ -73,7 +99,7 @@ interface SessionData {
 }
 
 interface ActiveAction {
-  kind: "woodcutting";
+  kind: "gather";
   resourceId: string;
   ticksDone: number;
   ticksNeeded: number;
@@ -84,12 +110,17 @@ export class WorldRoom extends Room<WorldState> {
   private tickTimer?: ReturnType<typeof setInterval>;
   private moveTimer?: ReturnType<typeof setInterval>;
   private actions = new Map<string, ActiveAction>();
-  private skillHandlers: SkillHandler[] = [new WoodcuttingHandler()];
+  private skillHandlers: SkillHandler[] = [
+    new WoodcuttingHandler(),
+    new MiningHandler(),
+    new FarmingHandler(),
+  ];
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
   private playerEquipment = new Map<string, EquipmentLoadout>();
+  private playerZone = new Map<string, ZoneId>();
   /** Throttle DB writes for x/y — Colyseus still syncs every move tick. */
   private lastPosPersistAt = new Map<string, number>();
   private chatLimiter = new ChatRateLimiter();
@@ -116,6 +147,26 @@ export class WorldRoom extends Room<WorldState> {
     return inventoryCapacity(this.playerEquipment.get(playerId));
   }
 
+  private npcSnapshots(): NpcSnapshot[] {
+    return Object.values(ZONE_DEFS).flatMap((zone) =>
+      zone.npcs.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        name: n.name,
+        x: n.x,
+        y: n.y,
+        zoneId: zone.id,
+      })),
+    );
+  }
+
+  private interactRangeFor(resourceId: string): number {
+    if (resourceId === WOODCUTTING.NORMAL_TREE.resourceId) return WOODCUTTING.NORMAL_TREE.interactRange;
+    if (resourceId === MINING.STONE.resourceId) return MINING.STONE.interactRange;
+    if (resourceId === FARMING.WHEAT.resourceId) return FARMING.WHEAT.interactRange;
+    return 48;
+  }
+
   /** Visible bag slots only (capacity-bounded). */
   private visibleInventory(playerId: string) {
     const inv = this.playerInventory.get(playerId) ?? [];
@@ -132,9 +183,16 @@ export class WorldRoom extends Room<WorldState> {
     const player = ps ?? this.state.players.get(playerId);
     if (!player) return;
     const wc = this.playerSkills.get(playerId)?.get(SKILLS.WOODCUTTING) ?? { level: 1, xp: 0 };
+    const mn = this.playerSkills.get(playerId)?.get(SKILLS.MINING) ?? { level: 1, xp: 0 };
+    const fm = this.playerSkills.get(playerId)?.get(SKILLS.FARMING) ?? { level: 1, xp: 0 };
     player.woodcuttingLevel = wc.level;
     player.woodcuttingXp = wc.xp;
+    player.miningLevel = mn.level;
+    player.miningXp = mn.xp;
+    player.farmingLevel = fm.level;
+    player.farmingXp = fm.xp;
     player.coins = this.playerCoins.get(playerId) ?? 0;
+    player.zone = this.playerZone.get(playerId) ?? ZONES.TOWN;
     const equipment = this.playerEquipment.get(playerId) ?? {};
     player.inventoryCapacity = inventoryCapacity(equipment);
     player.equipmentJson = serializeEquipment(equipment);
@@ -149,6 +207,7 @@ export class WorldRoom extends Room<WorldState> {
       y: p.y,
       action: p.action || null,
       appearance: this.appearanceOf(p),
+      zone: (this.playerZone.get(p.id) ?? ZONES.TOWN) as ZoneId,
     }));
   }
   async onAuth(_client: Client, options: { token?: string }): Promise<SessionData> {
@@ -176,13 +235,17 @@ export class WorldRoom extends Room<WorldState> {
     // Broadcast position patches ~20 Hz (movement steps every 50ms)
     this.setPatchRate(50);
 
-    const tree = new ResourceState();
-    tree.id = WOODCUTTING.NORMAL_TREE.resourceId;
-    tree.kind = "tree";
-    tree.x = 320;
-    tree.y = 240;
-    tree.available = true;
-    this.state.resources.set(tree.id, tree);
+    for (const zone of Object.values(ZONE_DEFS)) {
+      for (const res of zone.resources) {
+        const rs = new ResourceState();
+        rs.id = res.id;
+        rs.kind = res.kind;
+        rs.x = res.x;
+        rs.y = res.y;
+        rs.available = true;
+        this.state.resources.set(rs.id, rs);
+      }
+    }
 
     this.onMessage("intent", (client, message: ClientMessage) => {
       this.handleIntent(client, message);
@@ -210,9 +273,11 @@ export class WorldRoom extends Room<WorldState> {
     const ps = new PlayerState();
     ps.id = player.id;
     ps.name = player.name;
-    ps.x = player.x;
-    ps.y = player.y;
+    // Always enter the world in town (zone hub)
+    ps.x = TOWN_SPAWN.x;
+    ps.y = TOWN_SPAWN.y;
     ps.action = "";
+    ps.zone = ZONES.TOWN;
     ps.hairColor = player.hairColor;
     ps.skinColor = player.skinColor;
     ps.shirtColor = player.shirtColor;
@@ -224,17 +289,22 @@ export class WorldRoom extends Room<WorldState> {
     for (const s of player.skills) {
       skills.set(s.skill, { level: s.level, xp: s.xp });
     }
-    if (!skills.has(SKILLS.WOODCUTTING)) {
-      skills.set(SKILLS.WOODCUTTING, { level: 1, xp: 0 });
+    for (const skill of [SKILLS.WOODCUTTING, SKILLS.MINING, SKILLS.FARMING]) {
+      if (!skills.has(skill)) skills.set(skill, { level: 1, xp: 0 });
     }
     this.playerSkills.set(player.id, skills);
     this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
+    this.playerZone.set(player.id, ZONES.TOWN);
 
     const equipment = parseEquipmentJson(player.equipmentJson);
     this.playerEquipment.set(player.id, equipment);
     this.syncHudState(player.id, ps);
+
+    if (Math.abs(player.x - TOWN_SPAWN.x) > 1 || Math.abs(player.y - TOWN_SPAWN.y) > 1) {
+      enqueueDirtyPlayer(player.id, { x: ps.x, y: ps.y });
+    }
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
@@ -246,6 +316,7 @@ export class WorldRoom extends Room<WorldState> {
         y: r.y,
         available: r.available,
       })),
+      npcs: this.npcSnapshots(),
       you: {
         playerId: player.id,
         inventory: this.visibleInventory(player.id),
@@ -259,6 +330,7 @@ export class WorldRoom extends Room<WorldState> {
         appearance: this.appearanceOf(ps),
         equipment,
         inventoryCapacity: inventoryCapacity(equipment),
+        zone: ZONES.TOWN,
       },
     });
 
@@ -300,6 +372,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
     this.playerEquipment.delete(playerId);
+    this.playerZone.delete(playerId);
     this.lastPosPersistAt.delete(playerId);
     this.chatLimiter.clear(playerId);
   }
@@ -333,6 +406,31 @@ export class WorldRoom extends Room<WorldState> {
 
     if (msg.type === "InteractResource") {
       this.handleInteractResource(client, playerId, ps, msg.resourceId);
+      return;
+    }
+
+    if (msg.type === "InteractNpc") {
+      this.handleInteractNpc(client, playerId, ps, msg.npcId);
+      return;
+    }
+
+    if (msg.type === "TravelZone") {
+      this.handleTravelZone(client, playerId, ps, msg.zone);
+      return;
+    }
+
+    if (msg.type === "ShopBuy") {
+      this.handleShopBuy(client, playerId, ps, msg.itemId, msg.quantity ?? 1);
+      return;
+    }
+
+    if (msg.type === "ShopSell") {
+      this.handleShopSell(client, playerId, ps, msg.itemId, msg.quantity);
+      return;
+    }
+
+    if (msg.type === "SyncInventory") {
+      void this.handleSyncInventory(client, playerId, ps);
       return;
     }
 
@@ -419,10 +517,16 @@ export class WorldRoom extends Room<WorldState> {
       return;
     }
 
-    const interactRange =
-      resourceId === WOODCUTTING.NORMAL_TREE.resourceId
-        ? WOODCUTTING.NORMAL_TREE.interactRange
-        : 48;
+    const resZone = zoneForResource(resourceId);
+    const playerZone = this.playerZone.get(playerId) ?? ZONES.TOWN;
+    if (resZone && resZone !== playerZone) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "wrong_zone",
+      });
+      return;
+    }
 
     // Starting a new interact cancels any in-progress skill until arrival / in-range start
     this.actions.delete(playerId);
@@ -433,11 +537,329 @@ export class WorldRoom extends Room<WorldState> {
       { x: ps.x, y: ps.y },
       resourceId,
       { x: resource.x, y: resource.y },
-      interactRange,
+      this.interactRangeFor(resourceId),
     );
 
     if (result.inRange) {
       this.tryStartSkill(client, playerId, ps, resourceId);
+    }
+  }
+
+  private handleInteractNpc(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    npcId: string,
+  ) {
+    const npc = findNpc(npcId);
+    if (!npc) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_npc",
+      });
+      return;
+    }
+
+    const playerZone = this.playerZone.get(playerId) ?? ZONES.TOWN;
+    if (npc.zoneId !== playerZone) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "wrong_zone",
+      });
+      return;
+    }
+
+    this.actions.delete(playerId);
+    ps.action = "";
+
+    const result = this.movement.beginInteract(
+      playerId,
+      { x: ps.x, y: ps.y },
+      npcId,
+      { x: npc.x, y: npc.y },
+      npc.interactRange,
+    );
+
+    if (result.inRange) {
+      this.resolveNpcInteract(client, playerId, ps, npcId);
+    }
+  }
+
+  private resolveNpcInteract(
+    client: Client | undefined,
+    playerId: string,
+    ps: PlayerState,
+    npcId: string,
+  ) {
+    const npc = findNpc(npcId);
+    if (!npc || !client) return;
+
+    const playerZone = this.playerZone.get(playerId) ?? ZONES.TOWN;
+    if (npc.zoneId !== playerZone) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "wrong_zone",
+      });
+      return;
+    }
+
+    const dist = Math.hypot(ps.x - npc.x, ps.y - npc.y);
+    if (dist > npc.interactRange + 8) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "too_far",
+      });
+      return;
+    }
+
+    this.movement.cancelMovement(playerId);
+
+    if (npc.kind === NPC_KINDS.SHOPKEEPER) {
+      client.send("OpenPanel", { type: "OpenPanel", panel: "shop" });
+      return;
+    }
+    if (npc.kind === NPC_KINDS.STOREHOUSE) {
+      client.send("OpenPanel", { type: "OpenPanel", panel: "bank" });
+      return;
+    }
+    if (npc.kind === NPC_KINDS.EXIT) {
+      client.send("OpenPanel", { type: "OpenPanel", panel: "travel" });
+      return;
+    }
+    if (npc.kind === NPC_KINDS.RETURN) {
+      this.teleportToZone(client, playerId, ps, ZONES.TOWN);
+    }
+  }
+
+  private handleTravelZone(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    zone: string,
+  ) {
+    if (!isZoneId(zone)) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_zone",
+      });
+      return;
+    }
+
+    const current = this.playerZone.get(playerId) ?? ZONES.TOWN;
+
+    if (zone === ZONES.TOWN) {
+      if (current === ZONES.TOWN) {
+        client.send("ActionResult", {
+          type: "ActionResult",
+          ok: false,
+          reason: "already_there",
+        });
+        return;
+      }
+      this.teleportToZone(client, playerId, ps, ZONES.TOWN);
+      return;
+    }
+
+    if (!TRAVEL_ZONES.includes(zone)) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_zone",
+      });
+      return;
+    }
+
+    if (current !== ZONES.TOWN) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "must_be_in_town",
+      });
+      return;
+    }
+
+    this.teleportToZone(client, playerId, ps, zone);
+  }
+
+  private teleportToZone(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    zone: ZoneId,
+  ) {
+    const def = ZONE_DEFS[zone];
+    this.actions.delete(playerId);
+    this.movement.cancelMovement(playerId);
+    ps.action = "";
+    ps.x = def.spawn.x;
+    ps.y = def.spawn.y;
+    this.playerZone.set(playerId, zone);
+    ps.zone = zone;
+    this.persistPosition(playerId, ps.x, ps.y, true);
+    this.syncHudState(playerId, ps);
+
+    client.send("ActionResult", {
+      type: "ActionResult",
+      ok: true,
+      action: "travel",
+    });
+  }
+
+  private handleShopBuy(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    itemId: string,
+    quantity: number,
+  ) {
+    if ((this.playerZone.get(playerId) ?? ZONES.TOWN) !== ZONES.TOWN) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "wrong_zone",
+      });
+      return;
+    }
+
+    const unitPrice = shopBuyPrice(itemId);
+    if (unitPrice == null || !ITEM_DEFS[itemId]) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "not_for_sale",
+      });
+      return;
+    }
+
+    const qty = Math.max(1, Math.min(99, Math.floor(quantity)));
+    const total = unitPrice * qty;
+    const coins = this.playerCoins.get(playerId) ?? 0;
+    if (coins < total) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "not_enough_coins",
+      });
+      return;
+    }
+
+    this.playerCoins.set(playerId, coins - total);
+    this.addItem(playerId, itemId, qty);
+    this.syncHudState(playerId, ps);
+
+    client.send("ActionResult", {
+      type: "ActionResult",
+      ok: true,
+      action: "shop_buy",
+      inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+      coins: this.playerCoins.get(playerId) ?? 0,
+    });
+
+    enqueueDirtyPlayer(playerId, {
+      inventory: this.playerInventory.get(playerId),
+      coins: this.playerCoins.get(playerId),
+      ledger: {
+        type: LedgerType.TRADE,
+        itemId,
+        deltaQty: qty,
+        meta: { shop: "buy", price: total },
+      },
+    });
+  }
+
+  private handleShopSell(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+    itemId: string,
+    quantity: number,
+  ) {
+    if ((this.playerZone.get(playerId) ?? ZONES.TOWN) !== ZONES.TOWN) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "wrong_zone",
+      });
+      return;
+    }
+
+    const unitPrice = shopSellPrice(itemId);
+    if (unitPrice == null) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "not_buyable",
+      });
+      return;
+    }
+
+    const qty = Math.max(1, Math.floor(quantity));
+    if (!this.removeItem(playerId, itemId, qty)) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "not_enough_items",
+      });
+      return;
+    }
+
+    const earned = unitPrice * qty;
+    const coins = (this.playerCoins.get(playerId) ?? 0) + earned;
+    this.playerCoins.set(playerId, coins);
+    this.syncHudState(playerId, ps);
+
+    client.send("ActionResult", {
+      type: "ActionResult",
+      ok: true,
+      action: "shop_sell",
+      inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+      coins,
+    });
+
+    enqueueDirtyPlayer(playerId, {
+      inventory: this.playerInventory.get(playerId),
+      coins,
+      ledger: {
+        type: LedgerType.TRADE,
+        itemId,
+        deltaQty: -qty,
+        meta: { shop: "sell", price: earned },
+      },
+    });
+  }
+
+  private async handleSyncInventory(
+    client: Client,
+    playerId: string,
+    ps: PlayerState,
+  ) {
+    try {
+      const player = await prisma.player.findUniqueOrThrow({
+        where: { id: playerId },
+        include: { inventory: { orderBy: { slot: "asc" } } },
+      });
+      this.playerInventory.set(playerId, padInventory(player.inventory));
+      this.playerCoins.set(playerId, player.coins);
+      this.syncHudState(playerId, ps);
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: true,
+        action: "sync_inventory",
+        inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+        coins: player.coins,
+      });
+    } catch (err) {
+      console.error("[WorldRoom] SyncInventory failed", err);
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "sync_failed",
+      });
     }
   }
 
@@ -474,16 +896,16 @@ export class WorldRoom extends Room<WorldState> {
     }
 
     this.actions.set(playerId, {
-      kind: "woodcutting",
+      kind: "gather",
       resourceId,
       ticksDone: 0,
       ticksNeeded: start.ticksNeeded,
     });
-    ps.action = "woodcutting";
+    ps.action = "gather";
     client?.send("ActionResult", {
       type: "ActionResult",
       ok: true,
-      action: "woodcutting",
+      action: "gather",
       resourceId,
     });
   }
@@ -513,7 +935,11 @@ export class WorldRoom extends Room<WorldState> {
         this.persistPosition(playerId, ps.x, ps.y, true);
         if (!pendingInteract) return;
         const client = this.findClientByPlayerId(playerId);
-        this.tryStartSkill(client, playerId, ps, pendingInteract);
+        if (findNpc(pendingInteract)) {
+          this.resolveNpcInteract(client, playerId, ps, pendingInteract);
+        } else {
+          this.tryStartSkill(client, playerId, ps, pendingInteract);
+        }
       },
     );
   }
@@ -679,7 +1105,7 @@ export class WorldRoom extends Room<WorldState> {
         client.send("ActionResult", {
           type: "ActionResult",
           ok: true,
-          action: "woodcutting_complete",
+          action: "gather_complete",
           resourceId: action.resourceId,
           skillId: skillUpdate.skill,
           skillLevel: skillUpdate.level,
@@ -737,6 +1163,32 @@ export class WorldRoom extends Room<WorldState> {
       empty.quantity = add;
       remaining -= add;
     }
+  }
+
+  /** Remove qty of itemId from visible inventory. Returns false if not enough. */
+  private removeItem(playerId: string, itemId: string, qty: number): boolean {
+    const inv = this.playerInventory.get(playerId);
+    if (!inv) return false;
+    const capacity = this.capacityOf(playerId);
+    let have = 0;
+    for (const s of inv) {
+      if (s.slot < capacity && s.itemId === itemId) have += s.quantity;
+    }
+    if (have < qty) return false;
+
+    let remaining = qty;
+    for (const s of inv) {
+      if (remaining <= 0) break;
+      if (s.slot >= capacity || s.itemId !== itemId || s.quantity <= 0) continue;
+      const take = Math.min(s.quantity, remaining);
+      s.quantity -= take;
+      remaining -= take;
+      if (s.quantity <= 0) {
+        s.itemId = null;
+        s.quantity = 0;
+      }
+    }
+    return true;
   }
 }
 

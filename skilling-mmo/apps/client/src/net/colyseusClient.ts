@@ -52,6 +52,7 @@ export interface ConnectHandlers {
   onCoins?: (coins: number) => void;
   onEquipment?: (equipment: EquipmentLoadout, capacity: number) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
+  onOpenPanel?: (panel: "shop" | "bank" | "travel") => void;
   onStatus: (status: string) => void;
   onChatMessage: (message: ChatMessageDto) => void;
   onChatError: (error: string) => void;
@@ -114,6 +115,7 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
     inventoryJson: typeof m.inventoryJson === "string" ? m.inventoryJson : undefined,
     equipmentJson: typeof m.equipmentJson === "string" ? m.equipmentJson : undefined,
     inventoryCapacity: typeof m.inventoryCapacity === "number" ? m.inventoryCapacity : undefined,
+    coins: typeof m.coins === "number" ? m.coins : undefined,
     skill,
     inventory: inventory ?? undefined,
   };
@@ -189,6 +191,20 @@ export async function connectGame(
         xp: p.woodcuttingXp,
       });
     }
+    if (typeof p.miningLevel === "number" && typeof p.miningXp === "number") {
+      applySkill({
+        skill: SKILLS.MINING,
+        level: p.miningLevel,
+        xp: p.miningXp,
+      });
+    }
+    if (typeof p.farmingLevel === "number" && typeof p.farmingXp === "number") {
+      applySkill({
+        skill: SKILLS.FARMING,
+        level: p.farmingLevel,
+        xp: p.farmingXp,
+      });
+    }
     if (typeof p.coins === "number") {
       applyCoins(p.coins);
     }
@@ -257,6 +273,10 @@ export async function connectGame(
 
     p.listen("woodcuttingLevel", () => maybeHud());
     p.listen("woodcuttingXp", () => maybeHud());
+    p.listen("miningLevel", () => maybeHud());
+    p.listen("miningXp", () => maybeHud());
+    p.listen("farmingLevel", () => maybeHud());
+    p.listen("farmingXp", () => maybeHud());
     p.listen("coins", () => maybeHud());
     p.listen("inventoryJson", () => maybeHud());
     p.listen("equipmentJson", () => maybeHud());
@@ -315,11 +335,22 @@ export async function connectGame(
 
     room.onMessage("ActionResult", (msg: unknown) => {
       const parsed = parseActionResult(msg);
-      if (parsed.ok && (parsed.action === "woodcutting_complete" || parsed.action === "item_drag")) {
+      const syncHudActions = new Set([
+        "gather_complete",
+        "woodcutting_complete",
+        "item_drag",
+        "shop_buy",
+        "shop_sell",
+        "sync_inventory",
+      ]);
+      if (parsed.ok && parsed.action && syncHudActions.has(parsed.action)) {
         if (parsed.skill) applySkill(parsed.skill);
         if (parsed.inventory) {
           lastInventoryJson = parsed.inventoryJson ?? lastInventoryJson;
           applyInventory(parsed.inventory);
+        }
+        if (typeof parsed.coins === "number") {
+          applyCoins(parsed.coins);
         }
         if (typeof parsed.equipmentJson === "string") {
           lastEquipmentJson = parsed.equipmentJson;
@@ -333,6 +364,10 @@ export async function connectGame(
         }
       }
       handlers.onAction(parsed);
+    });
+
+    room.onMessage("OpenPanel", (msg: Extract<ServerMessage, { type: "OpenPanel" }>) => {
+      if (msg?.panel) handlers.onOpenPanel?.(msg.panel);
     });
 
     room.onMessage("ChatMessage", (msg: Extract<ServerMessage, { type: "ChatMessage" }>) => {

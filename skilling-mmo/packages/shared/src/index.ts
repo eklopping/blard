@@ -2,6 +2,7 @@
 
 import type { TraitId } from "./traits.js";
 import type { Appearance } from "./avatar.js";
+import type { ZoneId, NpcKind, OpenPanelKind } from "./zones.js";
 
 export const TICK_MS = 600;
 
@@ -127,6 +128,8 @@ export const ITEMS = {
   LOGS: "logs",
   COINS: "coins",
   OAK_LOGS: "oak_logs",
+  STONE: "stone",
+  WHEAT: "wheat",
   BASIC_BACKPACK: "basic_backpack",
   BASIC_AXE: "basic_axe",
   BASIC_PICKAXE: "basic_pickaxe",
@@ -199,6 +202,8 @@ export type EquipmentLoadout = Partial<Record<EquipmentSlotId, { itemId: string;
 export const ITEM_DEFS: Record<string, ItemDef> = {
   [ITEMS.LOGS]: { id: ITEMS.LOGS, name: "Logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
   [ITEMS.OAK_LOGS]: { id: ITEMS.OAK_LOGS, name: "Oak logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.STONE]: { id: ITEMS.STONE, name: "Stone", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.WHEAT]: { id: ITEMS.WHEAT, name: "Wheat", stackable: true, maxStack: DEFAULT_MAX_STACK },
   [ITEMS.COINS]: { id: ITEMS.COINS, name: "Coins", stackable: true, maxStack: DEFAULT_MAX_STACK },
   [ITEMS.BASIC_BACKPACK]: {
     id: ITEMS.BASIC_BACKPACK,
@@ -341,8 +346,55 @@ export const WOODCUTTING = {
     itemQty: 1,
     interactRange: 48,
   },
-  // TODO: oak, willow, etc.
 } as const;
+
+export const MINING = {
+  STONE: {
+    resourceId: "stone_chunk",
+    requiredLevel: 1,
+    ticksToMine: 5,
+    xp: 1,
+    itemId: ITEMS.STONE,
+    itemQty: 1,
+    interactRange: 48,
+  },
+} as const;
+
+export const FARMING = {
+  WHEAT: {
+    resourceId: "wheat_plot",
+    requiredLevel: 1,
+    ticksToHarvest: 5,
+    xp: 1,
+    itemId: ITEMS.WHEAT,
+    itemQty: 1,
+    interactRange: 48,
+  },
+} as const;
+
+export {
+  ZONES,
+  ZONE_LABELS,
+  TRAVEL_ZONES,
+  ZONE_DEFS,
+  NPC_KINDS,
+  NPC_INTERACT_RANGE,
+  TOWN_SPAWN,
+  SHOP_BUY,
+  SHOP_SELL,
+  isZoneId,
+  allZoneNpcs,
+  findNpc,
+  zoneForResource,
+  shopBuyPrice,
+  shopSellPrice,
+  type ZoneId,
+  type NpcKind,
+  type ZoneNpcDef,
+  type ZoneResourceDef,
+  type ZoneDef,
+  type OpenPanelKind,
+} from "./zones.js";
 
 export const BANK_SIZE = 100;
 
@@ -396,6 +448,11 @@ export function validateChatBody(
 export type ClientMessage =
   | { type: "Move"; x: number; y: number }
   | { type: "InteractResource"; resourceId: string }
+  | { type: "InteractNpc"; npcId: string }
+  | { type: "TravelZone"; zone: ZoneId }
+  | { type: "ShopBuy"; itemId: string; quantity?: number }
+  | { type: "ShopSell"; itemId: string; quantity: number }
+  | { type: "SyncInventory" }
   | { type: "CancelAction" }
   | { type: "ChatPublic"; body: string }
   | { type: "ChatDm"; recipientId: string; body: string }
@@ -403,7 +460,13 @@ export type ClientMessage =
 
 /** Server → client events */
 export type ServerMessage =
-  | { type: "StateSnapshot"; players: PlayerSnapshot[]; resources: ResourceSnapshot[]; you: SelfSnapshot }
+  | {
+      type: "StateSnapshot";
+      players: PlayerSnapshot[];
+      resources: ResourceSnapshot[];
+      npcs: NpcSnapshot[];
+      you: SelfSnapshot;
+    }
   | { type: "StateDelta"; players?: PlayerSnapshot[]; resources?: ResourceSnapshot[] }
   | {
       type: "ActionResult";
@@ -418,9 +481,11 @@ export type ServerMessage =
       inventoryJson?: string;
       equipmentJson?: string;
       inventoryCapacity?: number;
+      coins?: number;
       skill?: SkillProgressDto;
       inventory?: InventorySlotDto[];
     }
+  | { type: "OpenPanel"; panel: OpenPanelKind }
   | { type: "InventoryUpdate"; slots: InventorySlotDto[] }
   | { type: "SkillUpdate"; skill: SkillId; level: number; xp: number }
   | { type: "BankUpdate"; slots: BankSlotDto[] }
@@ -434,6 +499,7 @@ export interface PlayerSnapshot {
   y: number;
   action?: string | null;
   appearance?: Appearance;
+  zone?: ZoneId;
 }
 
 export interface ResourceSnapshot {
@@ -442,6 +508,15 @@ export interface ResourceSnapshot {
   x: number;
   y: number;
   available: boolean;
+}
+
+export interface NpcSnapshot {
+  id: string;
+  kind: NpcKind;
+  name: string;
+  x: number;
+  y: number;
+  zoneId: ZoneId;
 }
 
 export interface SelfSnapshot {
@@ -454,6 +529,7 @@ export interface SelfSnapshot {
   appearance?: Appearance;
   equipment?: EquipmentLoadout;
   inventoryCapacity?: number;
+  zone?: ZoneId;
 }
 
 export interface InventorySlotDto {
