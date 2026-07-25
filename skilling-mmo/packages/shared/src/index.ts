@@ -483,6 +483,10 @@ export type ServerMessage =
       equipmentJson?: string;
       inventoryCapacity?: number;
       coins?: number;
+      /** Present on successful travel — client must apply map switch from this */
+      zone?: ZoneId;
+      x?: number;
+      y?: number;
       skill?: SkillProgressDto;
       inventory?: InventorySlotDto[];
     }

@@ -2,6 +2,7 @@
 
 Each zone is its own full-size map (same WORLD dimensions). Coordinates are
 local to that map — players only see the zone they are currently in.
+Spawns and POIs are intentionally offset so travel is visually obvious.
 */
 
 import type { Vec2 } from "./nav.js";
@@ -64,7 +65,7 @@ export interface ZoneDef {
   skyColor: number;
 }
 
-export const NPC_INTERACT_RANGE = 48;
+export const NPC_INTERACT_RANGE = 56;
 
 const CX = Math.floor(WORLD_WIDTH_PX / 2);
 const CY = Math.floor(WORLD_HEIGHT_PX / 2);
@@ -77,24 +78,24 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
   [ZONES.TOWN]: {
     id: ZONES.TOWN,
     label: "Town",
-    spawn: { x: CX, y: CY },
-    groundTint: 0x4a6b3d,
+    spawn: { x: CX, y: CY - 40 },
+    groundTint: 0x5a8a45,
     skyColor: 0x1a2e1a,
     npcs: [
       {
         id: "npc_shopkeeper",
         kind: NPC_KINDS.SHOPKEEPER,
         name: "Shopkeeper",
-        x: CX - 160,
-        y: CY - 80,
+        x: CX - 180,
+        y: CY - 100,
         interactRange: NPC_INTERACT_RANGE,
       },
       {
         id: "npc_storehouse",
         kind: NPC_KINDS.STOREHOUSE,
         name: "Storehouse",
-        x: CX + 160,
-        y: CY - 80,
+        x: CX + 180,
+        y: CY - 100,
         interactRange: NPC_INTERACT_RANGE,
       },
       {
@@ -102,7 +103,7 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         kind: NPC_KINDS.EXIT,
         name: "Town Exit",
         x: CX,
-        y: CY + 200,
+        y: CY + 220,
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
@@ -111,56 +112,59 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
   [ZONES.WOODS]: {
     id: ZONES.WOODS,
     label: "Woods",
-    spawn: { x: CX, y: CY },
-    groundTint: 0x2d5530,
-    skyColor: 0x0f1f12,
+    // West side of the map — clearly different from town center
+    spawn: { x: 280, y: CY },
+    groundTint: 0x1e4a28,
+    skyColor: 0x0a1810,
     npcs: [
       {
         id: "portal_woods_return",
         kind: NPC_KINDS.RETURN,
         name: "Return to Town",
         x: 160,
-        y: 160,
+        y: CY - 120,
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "tree_normal", kind: "tree", x: CX + 80, y: CY - 40 }],
+    resources: [{ id: "tree_normal", kind: "tree", x: 980, y: CY + 40 }],
   },
   [ZONES.MINES]: {
     id: ZONES.MINES,
     label: "Mines",
-    spawn: { x: CX, y: CY },
-    groundTint: 0x4a4a4a,
-    skyColor: 0x1a1a1a,
+    // South side
+    spawn: { x: CX, y: WORLD_HEIGHT_PX - 200 },
+    groundTint: 0x555555,
+    skyColor: 0x121212,
     npcs: [
       {
         id: "portal_mines_return",
         kind: NPC_KINDS.RETURN,
         name: "Return to Town",
-        x: 160,
+        x: CX,
         y: 160,
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "stone_chunk", kind: "rock", x: CX + 80, y: CY - 40 }],
+    resources: [{ id: "stone_chunk", kind: "rock", x: CX + 120, y: CY }],
   },
   [ZONES.FARM]: {
     id: ZONES.FARM,
     label: "Farm",
-    spawn: { x: CX, y: CY },
-    groundTint: 0x6b5a30,
-    skyColor: 0x2a2410,
+    // East side
+    spawn: { x: WORLD_WIDTH_PX - 280, y: CY },
+    groundTint: 0x8a7030,
+    skyColor: 0x2a220e,
     npcs: [
       {
         id: "portal_farm_return",
         kind: NPC_KINDS.RETURN,
         name: "Return to Town",
-        x: 160,
-        y: 160,
+        x: WORLD_WIDTH_PX - 160,
+        y: CY - 120,
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "wheat_plot", kind: "crop", x: CX + 80, y: CY - 40 }],
+    resources: [{ id: "wheat_plot", kind: "crop", x: 300, y: CY + 40 }],
   },
 };
 

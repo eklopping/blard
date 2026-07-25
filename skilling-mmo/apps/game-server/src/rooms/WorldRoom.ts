@@ -714,6 +714,9 @@ export class WorldRoom extends Room<WorldState> {
       type: "ActionResult",
       ok: true,
       action: "travel",
+      zone,
+      x: def.spawn.x,
+      y: def.spawn.y,
     });
   }
 

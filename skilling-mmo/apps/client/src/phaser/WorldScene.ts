@@ -6,6 +6,7 @@ import {
   ACTION_REPEAT_COOLDOWN_MS,
   ZONE_DEFS,
   ZONES,
+  ZONE_LABELS,
   NPC_KINDS,
   WORLD_WIDTH_PX,
   WORLD_HEIGHT_PX,
@@ -64,6 +65,7 @@ export class WorldScene extends Phaser.Scene {
   private allNpcs: NpcSnapshot[] = [];
   private groundOverlay?: Phaser.GameObjects.Rectangle;
   private groundLayer?: Phaser.Tilemaps.TilemapLayer | null;
+  private zoneLabel?: Phaser.GameObjects.Text;
   private localZone: ZoneId = ZONES.TOWN;
   private predictedTarget?: { x: number; y: number };
   private serverPos?: { x: number; y: number };
@@ -112,6 +114,17 @@ export class WorldScene extends Phaser.Scene {
     );
     this.groundOverlay.setDepth(1);
 
+    this.zoneLabel = this.add
+      .text(16, 16, ZONE_LABELS[ZONES.TOWN], {
+        fontFamily: "monospace",
+        fontSize: "18px",
+        color: "#e6c84a",
+        backgroundColor: "#000000aa",
+        padding: { x: 8, y: 4 },
+      })
+      .setScrollFactor(0)
+      .setDepth(100);
+
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
     this.applyZoneVisuals(ZONES.TOWN);
     this.cameras.main.setRoundPixels(true);
@@ -149,14 +162,15 @@ export class WorldScene extends Phaser.Scene {
   private applyZoneVisuals(zone: ZoneId) {
     const def = ZONE_DEFS[zone];
     this.cameras.main.setBackgroundColor(def.skyColor);
-    this.groundOverlay?.setFillStyle(def.groundTint, 0.35);
+    this.groundOverlay?.setFillStyle(def.groundTint, 0.45);
     this.groundLayer?.setTint(def.groundTint);
+    this.zoneLabel?.setText(def.label);
   }
 
   /** Switch the active map view (only entities in this zone are shown). */
-  setLocalZone(zone: string) {
+  setLocalZone(zone: string, force = false) {
     if (!isZoneId(zone)) return;
-    if (zone === this.localZone) return;
+    if (!force && zone === this.localZone) return;
     this.localZone = zone;
     this.applyZoneVisuals(zone);
     this.cancelEngagement();
@@ -164,6 +178,21 @@ export class WorldScene extends Phaser.Scene {
     this.syncResources(this.allResources);
     this.syncNpcs(this.allNpcs);
     this.refreshPlayerVisibility();
+    this.releaseInput();
+  }
+
+  /** Hard apply a server travel — zone + pose, even if coords look unchanged. */
+  applyTravel(zone: string, x: number, y: number) {
+    if (!isZoneId(zone)) return;
+    if (this.localId) this.playerZones.set(this.localId, zone);
+    this.setLocalZone(zone, true);
+    this.serverPos = { x, y };
+    if (this.localId) this.lastServerPos.set(this.localId, { x, y });
+    if (this.localPlayer) {
+      this.localPlayer.setPosition(x, y);
+    }
+    if (this.localId) this.setWalking(this.localId, false);
+    this.releaseInput();
   }
 
   private hitWorldEntity(wx: number, wy: number): boolean {
@@ -342,15 +371,31 @@ export class WorldScene extends Phaser.Scene {
           pointer.event?.stopPropagation?.();
           this.tryEngageNpc(npcId, created.x, created.y);
         });
+        const label = this.add
+          .text(n.x, n.y - 40, n.name, {
+            fontFamily: "monospace",
+            fontSize: "11px",
+            color: "#f0e6c0",
+            backgroundColor: "#00000088",
+            padding: { x: 4, y: 2 },
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(7);
+        created.setData("label", label);
         this.npcSprites.set(n.id, created);
         sprite = created;
       } else {
         sprite.setTexture(tex);
         sprite.setPosition(n.x, n.y);
+        const label = sprite.getData("label") as Phaser.GameObjects.Text | undefined;
+        label?.setPosition(n.x, n.y - 40);
+        label?.setText(n.name);
       }
     }
     for (const [id, sprite] of this.npcSprites) {
       if (!seen.has(id)) {
+        const label = sprite.getData("label") as Phaser.GameObjects.Text | undefined;
+        label?.destroy();
         sprite.destroy();
         this.npcSprites.delete(id);
       }
@@ -496,8 +541,11 @@ export class WorldScene extends Phaser.Scene {
       this.predictedTarget = undefined;
       this.acting = false;
       this.stopChopVfx(false);
-      if (this.localPlayer && this.serverPos) {
+      if (msg.zone && typeof msg.x === "number" && typeof msg.y === "number") {
+        this.applyTravel(msg.zone, msg.x, msg.y);
+      } else if (this.localPlayer && this.serverPos) {
         this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+        this.releaseInput();
       }
       return;
     }

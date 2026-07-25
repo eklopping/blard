@@ -9,7 +9,8 @@ import type {
   SkillId,
   EquipmentLoadout,
 } from "@skilling-mmo/shared";
-import { SKILLS, INVENTORY_BASE_SLOTS, parseEquipmentJson } from "@skilling-mmo/shared";
+import { SKILLS, INVENTORY_BASE_SLOTS, parseEquipmentJson, isZoneId } from "@skilling-mmo/shared";
+import type { ZoneId } from "@skilling-mmo/shared";
 
 /** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
 function resolveEndpoint(): string {
@@ -116,6 +117,9 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
     equipmentJson: typeof m.equipmentJson === "string" ? m.equipmentJson : undefined,
     inventoryCapacity: typeof m.inventoryCapacity === "number" ? m.inventoryCapacity : undefined,
     coins: typeof m.coins === "number" ? m.coins : undefined,
+    zone: typeof m.zone === "string" && isZoneId(m.zone) ? (m.zone as ZoneId) : undefined,
+    x: typeof m.x === "number" ? m.x : undefined,
+    y: typeof m.y === "number" ? m.y : undefined,
     skill,
     inventory: inventory ?? undefined,
   };
