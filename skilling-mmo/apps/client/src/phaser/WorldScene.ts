@@ -116,15 +116,34 @@ export class WorldScene extends Phaser.Scene {
     this.applyZoneVisuals(ZONES.TOWN);
     this.cameras.main.setRoundPixels(true);
 
-    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown()) return;
-      if (this.hitWorldEntity(pointer.worldX, pointer.worldY)) return;
-      const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
-      if (!snapped) return;
-      this.cancelEngagement();
-      this.predictedTarget = snapped;
-      this.callbacks.onMove(snapped.x, snapped.y);
-    });
+    this.input.on(
+      "pointerdown",
+      (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (pointer.rightButtonDown()) return;
+        // Don't also issue Move when clicking resources/NPCs (and avoid stealing the gesture)
+        if (currentlyOver && currentlyOver.length > 0) return;
+        if (this.hitWorldEntity(pointer.worldX, pointer.worldY)) return;
+        const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
+        if (!snapped) return;
+        this.cancelEngagement();
+        this.predictedTarget = snapped;
+        this.callbacks.onMove(snapped.x, snapped.y);
+      },
+    );
+  }
+
+  /** HTML overlays (travel/shop) can steal pointerup — reset so world clicks keep working. */
+  releaseInput() {
+    try {
+      const mgr = this.input?.manager;
+      if (!mgr?.pointers) return;
+      for (const pointer of mgr.pointers) {
+        pointer?.reset?.();
+      }
+      this.input.enabled = true;
+    } catch {
+      // ignore — best-effort unlock after modal overlays
+    }
   }
 
   private applyZoneVisuals(zone: ZoneId) {
@@ -286,7 +305,8 @@ export class WorldScene extends Phaser.Scene {
         sprite.setOrigin(0.5, 1);
         sprite.setDepth(5);
         sprite.setInteractive({ useHandCursor: true });
-        sprite.on("pointerdown", () => {
+        sprite.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          pointer.event?.stopPropagation?.();
           this.tryEngageResource(r.id);
         });
         this.resourceSprites.set(r.id, sprite);
@@ -313,15 +333,17 @@ export class WorldScene extends Phaser.Scene {
       let sprite = this.npcSprites.get(n.id);
       const tex = textureForNpcKind(n.kind);
       if (!sprite) {
-        sprite = this.add.image(n.x, n.y, tex);
-        sprite.setOrigin(0.5, 1);
-        sprite.setDepth(6);
-        sprite.setInteractive({ useHandCursor: true });
+        const created = this.add.image(n.x, n.y, tex);
+        created.setOrigin(0.5, 1);
+        created.setDepth(6);
+        created.setInteractive({ useHandCursor: true });
         const npcId = n.id;
-        sprite.on("pointerdown", () => {
-          this.tryEngageNpc(npcId, n.x, n.y);
+        created.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+          pointer.event?.stopPropagation?.();
+          this.tryEngageNpc(npcId, created.x, created.y);
         });
-        this.npcSprites.set(n.id, sprite);
+        this.npcSprites.set(n.id, created);
+        sprite = created;
       } else {
         sprite.setTexture(tex);
         sprite.setPosition(n.x, n.y);

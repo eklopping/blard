@@ -338,6 +338,8 @@ export function App() {
           },
           onOpenPanel: (openPanel) => {
             if (cancelled) return;
+            // Modal steals pointerup from Phaser — unlock world input
+            bridge.current?.releaseInput();
             if (openPanel === "travel") setShowTravel(true);
             else if (openPanel === "shop") setShowShop(true);
             else if (openPanel === "bank") {
@@ -419,6 +421,12 @@ export function App() {
       bridge.current?.clearPlayers();
     };
   }, [gameToken]);
+
+  useEffect(() => {
+    if (showTravel || showShop || bankOpen) {
+      bridge.current?.releaseInput();
+    }
+  }, [showTravel, showShop, bankOpen]);
 
   useEffect(() => {
     if (bankOpen) void refreshBank();
@@ -604,8 +612,12 @@ export function App() {
             onTravel={(zone: ZoneId) => {
               conn.current?.sendIntent({ type: "TravelZone", zone });
               setShowTravel(false);
+              bridge.current?.releaseInput();
             }}
-            onClose={() => setShowTravel(false)}
+            onClose={() => {
+              setShowTravel(false);
+              bridge.current?.releaseInput();
+            }}
           />
         ) : null}
         {showShop ? (
@@ -618,7 +630,10 @@ export function App() {
             onSell={(itemId, quantity) => {
               conn.current?.sendIntent({ type: "ShopSell", itemId, quantity });
             }}
-            onClose={() => setShowShop(false)}
+            onClose={() => {
+              setShowShop(false);
+              bridge.current?.releaseInput();
+            }}
           />
         ) : null}
       </div>

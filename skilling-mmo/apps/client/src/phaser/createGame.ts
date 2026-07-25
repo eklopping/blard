@@ -17,6 +17,8 @@ export interface GameBridge {
   clearPlayers: () => void;
   getLocalPos: () => { x: number; y: number };
   onActionResult: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
+  /** Call when HTML modals open/close so Phaser doesn't keep a stuck pointer. */
+  releaseInput: () => void;
 }
 
 export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameBridge {
@@ -63,5 +65,6 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
     clearPlayers: () => world?.clearPlayers(),
     getLocalPos: () => world?.getLocalPos() ?? { x: 640, y: 480 },
     onActionResult: (msg) => world?.onActionResult(msg),
+    releaseInput: () => world?.releaseInput(),
   };
 }

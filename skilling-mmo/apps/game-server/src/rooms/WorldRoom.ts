@@ -574,6 +574,13 @@ export class WorldRoom extends Room<WorldState> {
     this.actions.delete(playerId);
     ps.action = "";
 
+    // Already close enough — open immediately (don't require exact side-stand)
+    const dist = Math.hypot(ps.x - npc.x, ps.y - npc.y);
+    if (dist <= npc.interactRange) {
+      this.resolveNpcInteract(client, playerId, ps, npcId);
+      return;
+    }
+
     const result = this.movement.beginInteract(
       playerId,
       { x: ps.x, y: ps.y },

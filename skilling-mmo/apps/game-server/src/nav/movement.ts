@@ -109,6 +109,8 @@ export class MovementController {
     for (const [playerId, state] of this.players) {
       if (!state.target) continue;
       const pos = getPos(playerId);
+      // Locked in a skill action — keep destination so we resume after, but don't
+      // drop pendingInteract on a soft skip. If we never get a pos again, cancel.
       if (!pos) continue;
 
       const { pos: next, arrived } = stepToward(pos, state.target, speed, dtMs);
