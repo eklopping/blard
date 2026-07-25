@@ -72,9 +72,16 @@ export async function connectGame(
     handlers.onStatus("connected");
 
     room.onMessage("StateSnapshot", (msg) => handlers.onSnapshot(msg));
-    room.onMessage("InventoryUpdate", (msg) => handlers.onInventory(msg.slots));
-    room.onMessage("SkillUpdate", (msg) =>
-      handlers.onSkill({ skill: msg.skill, level: msg.level, xp: msg.xp }),
+    room.onMessage("InventoryUpdate", (msg: { slots?: InventorySlotDto[] } | InventorySlotDto[]) => {
+      const slots = Array.isArray(msg) ? msg : msg?.slots;
+      if (Array.isArray(slots)) handlers.onInventory(slots);
+    });
+    room.onMessage(
+      "SkillUpdate",
+      (msg: { skill?: SkillProgressDto["skill"]; level?: number; xp?: number }) => {
+        if (msg?.skill == null || msg.level == null || msg.xp == null) return;
+        handlers.onSkill({ skill: msg.skill, level: msg.level, xp: msg.xp });
+      },
     );
     room.onMessage("ActionResult", (msg) => handlers.onAction(msg));
     room.onMessage("ChatMessage", (msg: Extract<ServerMessage, { type: "ChatMessage" }>) => {

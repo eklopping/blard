@@ -11,11 +11,13 @@ import {
   MOVE_TICK_MS,
   WOODCUTTING,
   SKILLS,
+  INVENTORY_SIZE,
   levelFromXp,
   CHAT_PUBLIC_RATE_MS,
   CHAT_DM_RATE_MS,
   validateChatBody,
   dmThreadKey,
+  findClosestSideApproach,
   type ClientMessage,
   type ChatMessageDto,
 } from "@skilling-mmo/shared";
@@ -170,10 +172,7 @@ export class WorldRoom extends Room<WorldState> {
       skills.set(SKILLS.WOODCUTTING, { level: 1, xp: 0 });
     }
     this.playerSkills.set(player.id, skills);
-    this.playerInventory.set(
-      player.id,
-      player.inventory.map((s) => ({ slot: s.slot, itemId: s.itemId, quantity: s.quantity })),
-    );
+    this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
 
@@ -328,8 +327,20 @@ export class WorldRoom extends Room<WorldState> {
       return;
     }
 
-    // Lock in place for the duration of the action
+    // Lock in place for the duration of the action — snap to the side stand
     this.movement.cancelMovement(playerId);
+    const resource = this.state.resources.get(resourceId);
+    if (resource) {
+      const stand = findClosestSideApproach(
+        { x: ps.x, y: ps.y },
+        { x: resource.x, y: resource.y },
+      );
+      if (stand) {
+        ps.x = stand.x;
+        ps.y = stand.y;
+        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
+      }
+    }
 
     const ctx = this.buildCtx(playerId, ps);
     const start = handler.tryStart(ctx, resourceId);
@@ -534,23 +545,34 @@ export class WorldRoom extends Room<WorldState> {
 
       this.addItem(playerId, result.itemId, result.itemQty);
 
+      const skillUpdate = {
+        skill: result.skill,
+        level: newLevel,
+        xp: newXp,
+      };
+      const inventoryUpdate = (this.playerInventory.get(playerId) ?? []).map((s) => ({
+        slot: s.slot,
+        itemId: s.itemId,
+        quantity: s.quantity,
+      }));
+
       const client = this.clients.find((c) => (c as any).playerId === playerId);
       if (client) {
         client.send("SkillUpdate", {
           type: "SkillUpdate",
-          skill: result.skill,
-          level: newLevel,
-          xp: newXp,
+          ...skillUpdate,
         });
         client.send("InventoryUpdate", {
           type: "InventoryUpdate",
-          slots: this.playerInventory.get(playerId)!,
+          slots: inventoryUpdate,
         });
         client.send("ActionResult", {
           type: "ActionResult",
           ok: true,
           action: "woodcutting_complete",
           resourceId: action.resourceId,
+          skill: skillUpdate,
+          inventory: inventoryUpdate,
         });
       }
 
@@ -571,8 +593,14 @@ export class WorldRoom extends Room<WorldState> {
   }
 
   private addItem(playerId: string, itemId: string, qty: number) {
-    const inv = this.playerInventory.get(playerId);
-    if (!inv) return;
+    let inv = this.playerInventory.get(playerId);
+    if (!inv) {
+      inv = padInventory([]);
+      this.playerInventory.set(playerId, inv);
+    } else if (inv.length < INVENTORY_SIZE) {
+      inv = padInventory(inv);
+      this.playerInventory.set(playerId, inv);
+    }
     const stack = inv.find((s) => s.itemId === itemId);
     if (stack) {
       stack.quantity += qty;
@@ -584,4 +612,16 @@ export class WorldRoom extends Room<WorldState> {
       empty.quantity = qty;
     }
   }
+}
+
+function padInventory(
+  slots: { slot: number; itemId: string | null; quantity: number }[],
+): { slot: number; itemId: string | null; quantity: number }[] {
+  const bySlot = new Map(slots.map((s) => [s.slot, s]));
+  return Array.from({ length: INVENTORY_SIZE }, (_, slot) => {
+    const existing = bySlot.get(slot);
+    return existing
+      ? { slot, itemId: existing.itemId, quantity: existing.quantity }
+      : { slot, itemId: null, quantity: 0 };
+  });
 }

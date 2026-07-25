@@ -279,17 +279,31 @@ export function App() {
             setStatus("connected");
           },
           onInventory: (slots) => {
-            if (!cancelled) setInventory(slots);
+            if (!cancelled && Array.isArray(slots)) {
+              setInventory(slots.map((s) => ({ ...s })));
+            }
           },
           onSkill: (s) => {
-            if (cancelled) return;
+            if (cancelled || !s?.skill) return;
             setSkills((prev) => {
               const rest = prev.filter((x) => x.skill !== s.skill);
-              return [...rest, s];
+              return [...rest, { skill: s.skill, level: s.level, xp: s.xp }];
             });
           },
           onAction: (msg) => {
             bridge.current?.onActionResult(msg);
+            if (!cancelled && msg.ok && msg.action === "woodcutting_complete") {
+              if (msg.skill) {
+                const skill = msg.skill;
+                setSkills((prev) => {
+                  const rest = prev.filter((x) => x.skill !== skill.skill);
+                  return [...rest, { ...skill }];
+                });
+              }
+              if (Array.isArray(msg.inventory)) {
+                setInventory(msg.inventory.map((s) => ({ ...s })));
+              }
+            }
           },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);

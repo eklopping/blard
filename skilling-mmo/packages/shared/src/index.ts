@@ -209,7 +209,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "StateSnapshot"; players: PlayerSnapshot[]; resources: ResourceSnapshot[]; you: SelfSnapshot }
   | { type: "StateDelta"; players?: PlayerSnapshot[]; resources?: ResourceSnapshot[] }
-  | { type: "ActionResult"; ok: boolean; reason?: string; action?: string; resourceId?: string }
+  | { type: "ActionResult"; ok: boolean; reason?: string; action?: string; resourceId?: string; skill?: SkillProgressDto; inventory?: InventorySlotDto[] }
   | { type: "InventoryUpdate"; slots: InventorySlotDto[] }
   | { type: "SkillUpdate"; skill: SkillId; level: number; xp: number }
   | { type: "BankUpdate"; slots: BankSlotDto[] }

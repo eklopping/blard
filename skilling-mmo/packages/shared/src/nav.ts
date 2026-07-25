@@ -22,7 +22,7 @@ export const ARRIVE_EPSILON_PX = 2;
 export const ACTION_REPEAT_COOLDOWN_MS = 5000;
 
 /** Horizontal stand offset from a resource center (left/right sides). */
-export const RESOURCE_SIDE_OFFSET_PX = TILE_SIZE;
+export const RESOURCE_SIDE_OFFSET_PX = TILE_SIZE * 2;
 
 export interface Vec2 {
   x: number;
@@ -182,8 +182,9 @@ export function findApproachPoint(
 }
 
 /**
- * Stand on the left or right side of a resource (tile-snapped), picking the
- * side closer to the player. Used for skilling / future interactables.
+ * Stand on the left or right side of a resource, picking the side closer to
+ * the player. Keeps the same Y as the resource anchor so feet line up with
+ * the interactable (e.g. tree base).
  */
 export function findClosestSideApproach(
   from: Vec2,
@@ -192,12 +193,33 @@ export function findClosestSideApproach(
   grid?: WalkGrid,
 ): Vec2 | null {
   const g = grid ?? createOpenWalkGrid();
-  const left = snapToTileCenter(resource.x - sideOffset, resource.y, g);
-  const right = snapToTileCenter(resource.x + sideOffset, resource.y, g);
-  if (!left && !right) return null;
-  if (!left) return right;
-  if (!right) return left;
-  const dLeft = Math.hypot(left.x - from.x, left.y - from.y);
-  const dRight = Math.hypot(right.x - from.x, right.y - from.y);
-  return dLeft <= dRight ? left : right;
+  const candidates: Vec2[] = [];
+
+  for (const dir of [-1, 1] as const) {
+    const rawX = resource.x + dir * sideOffset;
+    const clamped = clampToWorld(rawX, resource.y);
+    const { tx, ty } = worldToTile(clamped.x, clamped.y);
+    if (!isWalkable(g, tx, ty)) continue;
+    // Snap X onto the walk tile center, but keep resource Y for visual alignment
+    const center = tileToWorldCenter(tx, ty);
+    candidates.push({ x: center.x, y: resource.y });
+  }
+
+  if (candidates.length === 0) {
+    // Fallback: nearest walkable snap, then force Y alignment
+    const snapped = snapToTileCenter(resource.x - sideOffset, resource.y, g);
+    return snapped ? { x: snapped.x, y: resource.y } : null;
+  }
+
+  let best = candidates[0]!;
+  let bestDist = Math.hypot(best.x - from.x, best.y - from.y);
+  for (let i = 1; i < candidates.length; i++) {
+    const c = candidates[i]!;
+    const d = Math.hypot(c.x - from.x, c.y - from.y);
+    if (d < bestDist) {
+      best = c;
+      bestDist = d;
+    }
+  }
+  return best;
 }
