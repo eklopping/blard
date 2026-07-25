@@ -74,20 +74,8 @@ export class WorldScene extends Phaser.Scene {
   update(_t: number, dt: number) {
     if (!this.localPlayer || !this.predictedTarget) return;
 
-    // Soft-correct toward last known server position while predicting
-    if (this.serverPos) {
-      const err = Math.hypot(
-        this.localPlayer.x - this.serverPos.x,
-        this.localPlayer.y - this.serverPos.y,
-      );
-      if (err > 32) {
-        this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
-      } else if (err > ARRIVE_EPSILON_PX) {
-        this.localPlayer.x += (this.serverPos.x - this.localPlayer.x) * 0.2;
-        this.localPlayer.y += (this.serverPos.y - this.localPlayer.y) * 0.2;
-      }
-    }
-
+    // Do not soft-correct toward server while predicting — patch lag would
+    // rubber-band the local sprite back into a small box around the last ACK.
     const { pos, arrived } = stepToward(
       { x: this.localPlayer.x, y: this.localPlayer.y },
       this.predictedTarget,
@@ -128,9 +116,19 @@ export class WorldScene extends Phaser.Scene {
     if (id === this.localId) {
       this.serverPos = { x, y };
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
-      if (dist > 32) {
+
+      if (this.predictedTarget) {
+        // Only correct gross desync while walking; keep prediction otherwise
+        if (dist > 256) {
+          sprite.setPosition(x, y);
+          this.predictedTarget = undefined;
+        }
+        return;
+      }
+
+      // Idle: snap to authoritative server position
+      if (dist > ARRIVE_EPSILON_PX) {
         sprite.setPosition(x, y);
-        this.predictedTarget = undefined;
       }
       return;
     }
