@@ -7,8 +7,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { InventorySlotDto, ItemLocation } from "@skilling-mmo/shared";
-import { BANK_SIZE, INVENTORY_ROW_SIZE, ITEM_DEFS } from "@skilling-mmo/shared";
+import { BANK_SIZE, ITEM_DEFS } from "@skilling-mmo/shared";
 import { ITEM_DRAG_MIME, encodeItemDrag, readItemDrag } from "./itemDrag";
+
+const BANK_COLS = 5;
 
 function padBankSlots(slots: InventorySlotDto[]): InventorySlotDto[] {
   const bySlot = new Map(slots.map((s) => [s.slot, s]));
@@ -124,15 +126,15 @@ export function BankWindow({
       </div>
       <p className="equip-hint">Drag items from your bag to deposit, or rearrange slots here.</p>
       <div
-        className="grid grid-bank bank-window-grid"
-        style={{ gridTemplateColumns: `repeat(${INVENTORY_ROW_SIZE}, 1fr)` }}
+        className="bank-window-grid"
+        style={{ gridTemplateColumns: `repeat(${BANK_COLS}, minmax(0, 1fr))` }}
       >
         {slots.map((s) => {
           const filled = Boolean(s.itemId && s.quantity > 0);
           return (
             <div
               key={s.slot}
-              className={`slot ${filled ? "" : "empty"}`}
+              className={`bank-slot slot ${filled ? "" : "empty"}`}
               title={filled ? ITEM_DEFS[s.itemId!]?.name ?? s.itemId! : `Bank ${s.slot + 1}`}
               draggable={filled && Boolean(onItemDrag)}
               onDragStart={(e) => onDragStart(s.slot, e)}
