@@ -136,11 +136,52 @@ export interface ItemDef {
   maxStack: number;
 }
 
+export const DEFAULT_MAX_STACK = 100;
+
 export const ITEM_DEFS: Record<string, ItemDef> = {
-  [ITEMS.LOGS]: { id: ITEMS.LOGS, name: "Logs", stackable: true, maxStack: 1000 },
-  [ITEMS.OAK_LOGS]: { id: ITEMS.OAK_LOGS, name: "Oak logs", stackable: true, maxStack: 1000 },
-  [ITEMS.COINS]: { id: ITEMS.COINS, name: "Coins", stackable: true, maxStack: 2_147_483_647 },
+  [ITEMS.LOGS]: { id: ITEMS.LOGS, name: "Logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.OAK_LOGS]: { id: ITEMS.OAK_LOGS, name: "Oak logs", stackable: true, maxStack: DEFAULT_MAX_STACK },
+  [ITEMS.COINS]: { id: ITEMS.COINS, name: "Coins", stackable: true, maxStack: DEFAULT_MAX_STACK },
 };
+
+export function maxStackFor(itemId: string): number {
+  return ITEM_DEFS[itemId]?.maxStack ?? DEFAULT_MAX_STACK;
+}
+
+/** Paper-doll equipment slots (UI + future equip rules). */
+export const EQUIPMENT_SLOT_IDS = [
+  "back",
+  "helmet",
+  "chestplate",
+  "leggings",
+  "boots",
+  "cape",
+  "accessory_1",
+  "accessory_2",
+  "accessory_3",
+  "accessory_4",
+  "accessory_5",
+  "primary",
+] as const;
+
+export type EquipmentSlotId = (typeof EQUIPMENT_SLOT_IDS)[number];
+
+export const EQUIPMENT_SLOT_LABELS: Record<EquipmentSlotId, string> = {
+  back: "Back (Bag)",
+  helmet: "Helmet",
+  chestplate: "Chestplate",
+  leggings: "Leggings",
+  boots: "Boots",
+  cape: "Overcoat / Cape",
+  accessory_1: "Accessory",
+  accessory_2: "Accessory",
+  accessory_3: "Accessory",
+  accessory_4: "Accessory",
+  accessory_5: "Accessory",
+  primary: "Weapon / Tool",
+};
+
+export type EquipmentLoadout = Partial<Record<EquipmentSlotId, { itemId: string; quantity: number } | null>>;
 
 export const WOODCUTTING = {
   NORMAL_TREE: {

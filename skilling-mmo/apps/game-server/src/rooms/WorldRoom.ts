@@ -12,6 +12,7 @@ import {
   WOODCUTTING,
   SKILLS,
   INVENTORY_SIZE,
+  maxStackFor,
   levelFromXp,
   CHAT_PUBLIC_RATE_MS,
   CHAT_DM_RATE_MS,
@@ -604,15 +605,25 @@ export class WorldRoom extends Room<WorldState> {
       inv = padInventory(inv);
       this.playerInventory.set(playerId, inv);
     }
-    const stack = inv.find((s) => s.itemId === itemId);
-    if (stack) {
-      stack.quantity += qty;
-      return;
-    }
-    const empty = inv.find((s) => !s.itemId || s.quantity === 0);
-    if (empty) {
+
+    const maxStack = maxStackFor(itemId);
+    let remaining = qty;
+
+    while (remaining > 0) {
+      const stack = inv.find((s) => s.itemId === itemId && s.quantity > 0 && s.quantity < maxStack);
+      if (stack) {
+        const space = maxStack - stack.quantity;
+        const add = Math.min(space, remaining);
+        stack.quantity += add;
+        remaining -= add;
+        continue;
+      }
+      const empty = inv.find((s) => !s.itemId || s.quantity === 0);
+      if (!empty) return; // inventory full — drop remainder
+      const add = Math.min(maxStack, remaining);
       empty.itemId = itemId;
-      empty.quantity = qty;
+      empty.quantity = add;
+      remaining -= add;
     }
   }
 }

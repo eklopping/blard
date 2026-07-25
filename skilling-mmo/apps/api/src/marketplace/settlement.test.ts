@@ -68,7 +68,7 @@ describe("marketplace atomic settlement", () => {
       await prisma.$queryRaw`SELECT 1`;
       await prisma.itemDefinition.upsert({
         where: { id: "logs" },
-        create: { id: "logs", name: "Logs", stackable: true, maxStack: 1000 },
+        create: { id: "logs", name: "Logs", stackable: true, maxStack: 100 },
         update: {},
       });
       dbReady = true;

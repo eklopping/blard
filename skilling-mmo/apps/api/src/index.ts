@@ -15,9 +15,9 @@ const jwtSecret = process.env.JWT_SECRET ?? "dev-secret-change-me";
 
 async function seedItems() {
   const items = [
-    { id: "logs", name: "Logs", stackable: true, maxStack: 1000 },
-    { id: "oak_logs", name: "Oak logs", stackable: true, maxStack: 1000 },
-    { id: "coins", name: "Coins", stackable: true, maxStack: 2147483647 },
+    { id: "logs", name: "Logs", stackable: true, maxStack: 100 },
+    { id: "oak_logs", name: "Oak logs", stackable: true, maxStack: 100 },
+    { id: "coins", name: "Coins", stackable: true, maxStack: 100 },
   ];
   for (const item of items) {
     await prisma.itemDefinition.upsert({
