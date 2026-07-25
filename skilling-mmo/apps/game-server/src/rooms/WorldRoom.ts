@@ -291,8 +291,9 @@ export class WorldRoom extends Room<WorldState> {
         skills: this.playerSkills.get(playerId),
         equipmentJson: serializeEquipment(this.playerEquipment.get(playerId) ?? {}),
       });
-      await flushDirtyPlayers();
+      // Remove from live state first so other clients drop the sprite immediately
       this.state.players.delete(playerId);
+      await flushDirtyPlayers();
     }
     this.playerSkills.delete(playerId);
     this.playerInventory.delete(playerId);

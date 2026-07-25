@@ -13,6 +13,7 @@ export interface GameBridge {
   applySnapshot: (snap: Extract<ServerMessage, { type: "StateSnapshot" }>) => void;
   reconcilePlayer: (id: string, x: number, y: number) => void;
   removePlayer: (id: string) => void;
+  clearPlayers: () => void;
   getLocalPos: () => { x: number; y: number };
   onActionResult: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
 }
@@ -41,11 +42,24 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
     },
   });
 
+  const onVisibility = () => {
+    if (document.hidden) {
+      world?.onTabHidden();
+    } else {
+      world?.onTabVisible();
+    }
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+
   return {
-    destroy: () => game.destroy(true),
+    destroy: () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      game.destroy(true);
+    },
     applySnapshot: (snap) => world?.applySnapshot(snap),
     reconcilePlayer: (id, x, y) => world?.reconcilePlayer(id, x, y),
     removePlayer: (id) => world?.removePlayer(id),
+    clearPlayers: () => world?.clearPlayers(),
     getLocalPos: () => world?.getLocalPos() ?? { x: 160, y: 160 },
     onActionResult: (msg) => world?.onActionResult(msg),
   };

@@ -34,12 +34,15 @@ export class WorldScene extends Phaser.Scene {
   private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
   private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
   private walkState = new Map<string, WalkState>();
+  private lastServerPos = new Map<string, { x: number; y: number }>();
   private tree?: Phaser.GameObjects.Image;
   private predictedTarget?: { x: number; y: number };
   private serverPos?: { x: number; y: number };
   private chopTween?: Phaser.Tweens.Tween;
   private localId?: string;
   private callbacks!: GameCallbacks;
+  /** Browser tab hidden — rAF/prediction stall; prefer server poses. */
+  private tabHidden = false;
 
   /** Resource the local player is engaged with (continuous gather loop). */
   private engagedResourceId: string | null = null;
@@ -92,8 +95,42 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Browser backgrounded the tab — stop client prediction so we don't freeze
+   * mid-walk while rAF is throttled. Server keeps moving; we follow on resume.
+   */
+  onTabHidden() {
+    this.tabHidden = true;
+    this.predictedTarget = undefined;
+    if (this.localId) this.setWalking(this.localId, false);
+    this.stopAllRemoteTweens();
+  }
+
+  /** Tab focused again — snap everyone to the latest server poses. */
+  onTabVisible() {
+    this.tabHidden = false;
+    this.predictedTarget = undefined;
+    this.stopAllRemoteTweens();
+
+    for (const [id, pos] of this.lastServerPos) {
+      const sprite =
+        this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
+      if (!sprite) continue;
+      sprite.setPosition(pos.x, pos.y);
+      this.setWalking(id, false);
+    }
+    if (this.localPlayer && this.serverPos) {
+      this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+      if (this.localId) this.setWalking(this.localId, false);
+    }
+  }
+
   update(_t: number, dt: number) {
     this.refreshResourceAlpha();
+
+    // Don't run prediction / walk anims while the tab is backgrounded
+    if (this.tabHidden || document.hidden) return;
+
     this.tickWalkAnims(dt);
 
     // Stay locked in place while performing an action
@@ -117,6 +154,13 @@ export class WorldScene extends Phaser.Scene {
 
   applySnapshot(snap: Extract<ServerMessage, { type: "StateSnapshot" }>) {
     this.localId = snap.you.playerId;
+    const present = new Set(snap.players.map((p) => p.id));
+
+    // Drop sprites for anyone no longer in the room (disconnects / profile swap)
+    for (const id of [...this.remotePlayers.keys()]) {
+      if (!present.has(id)) this.removePlayer(id);
+    }
+
     for (const p of snap.players) {
       this.ensurePlayer(
         p.id,
@@ -126,6 +170,7 @@ export class WorldScene extends Phaser.Scene {
         p.id === this.localId,
         p.appearance ?? snap.you.appearance ?? DEFAULT_APPEARANCE,
       );
+      this.lastServerPos.set(p.id, { x: p.x, y: p.y });
       if (p.id === this.localId) {
         this.serverPos = { x: p.x, y: p.y };
       }
@@ -141,6 +186,16 @@ export class WorldScene extends Phaser.Scene {
   reconcilePlayer(id: string, x: number, y: number) {
     const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
     if (!sprite) return;
+
+    this.lastServerPos.set(id, { x, y });
+
+    // While backgrounded, always hard-follow server (no prediction / tweens)
+    if (this.tabHidden || document.hidden) {
+      if (id === this.localId) this.serverPos = { x, y };
+      sprite.setPosition(x, y);
+      this.setWalking(id, false);
+      return;
+    }
 
     if (id === this.localId) {
       this.serverPos = { x, y };
@@ -451,15 +506,41 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Remove a player sprite (disconnect, profile swap, or roster sync). */
   removePlayer(id: string) {
-    if (id === this.localId) return;
     this.remoteTweens.get(id)?.stop();
     this.remoteTweens.delete(id);
     this.walkState.delete(id);
+    this.lastServerPos.delete(id);
     const sprite = this.remotePlayers.get(id);
     if (sprite) {
       sprite.destroy();
       this.remotePlayers.delete(id);
+    }
+    if (id === this.localId) {
+      this.localPlayer = undefined;
+    }
+  }
+
+  /** Wipe all character sprites — used when leaving the world / swapping profiles. */
+  clearPlayers() {
+    this.stopAllRemoteTweens();
+    for (const id of [...this.remotePlayers.keys()]) {
+      this.removePlayer(id);
+    }
+    this.localPlayer = undefined;
+    this.localId = undefined;
+    this.predictedTarget = undefined;
+    this.serverPos = undefined;
+    this.acting = false;
+    this.engagedResourceId = null;
+    this.stopChopVfx(false);
+  }
+
+  private stopAllRemoteTweens() {
+    for (const [id, tween] of this.remoteTweens) {
+      tween.stop();
+      this.remoteTweens.delete(id);
     }
   }
 }

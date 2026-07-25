@@ -111,6 +111,7 @@ export function App() {
     setSession(null);
     conn.current?.leave();
     conn.current = null;
+    bridge.current?.clearPlayers();
     setStatus("logged out");
     resetChatState();
   }, [resetChatState]);
@@ -120,6 +121,7 @@ export function App() {
       if (!prev) return null;
       conn.current?.leave();
       conn.current = null;
+      bridge.current?.clearPlayers();
       setStatus("idle");
       return clearCharacter(prev);
     });
@@ -397,6 +399,7 @@ export function App() {
       cancelled = true;
       conn.current?.leave();
       conn.current = null;
+      bridge.current?.clearPlayers();
     };
   }, [gameToken]);
 
