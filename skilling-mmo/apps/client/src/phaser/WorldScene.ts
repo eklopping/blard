@@ -55,7 +55,8 @@ function textureForNpcKind(kind: string): string {
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
   private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
-  private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
+  /** Authoritative pose remotes are lerping toward (real-time movement). */
+  private remoteTargets = new Map<string, { x: number; y: number }>();
   private walkState = new Map<string, WalkState>();
   private lastServerPos = new Map<string, { x: number; y: number }>();
   private playerZones = new Map<string, ZoneId>();
@@ -209,13 +210,14 @@ export class WorldScene extends Phaser.Scene {
     this.tabHidden = true;
     this.predictedTarget = undefined;
     if (this.localId) this.setWalking(this.localId, false);
-    this.stopAllRemoteTweens();
+    for (const id of this.remotePlayers.keys()) {
+      this.setWalking(id, false);
+    }
   }
 
   onTabVisible() {
     this.tabHidden = false;
     this.predictedTarget = undefined;
-    this.stopAllRemoteTweens();
 
     for (const [id, pos] of this.lastServerPos) {
       if (!this.isPlayerVisible(id)) continue;
@@ -223,6 +225,7 @@ export class WorldScene extends Phaser.Scene {
         this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
       if (!sprite) continue;
       sprite.setPosition(pos.x, pos.y);
+      this.remoteTargets.set(id, { x: pos.x, y: pos.y });
       this.setWalking(id, false);
     }
     if (this.localPlayer && this.serverPos) {
@@ -236,6 +239,7 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.tabHidden || document.hidden) return;
 
+    this.tickRemoteMotion(dt);
     this.tickWalkAnims(dt);
 
     if (this.acting) return;
@@ -253,6 +257,26 @@ export class WorldScene extends Phaser.Scene {
     if (arrived) {
       this.predictedTarget = undefined;
       if (this.localId) this.setWalking(this.localId, false);
+    }
+  }
+
+  /** Lerp other players toward latest server poses each frame. */
+  private tickRemoteMotion(dt: number) {
+    for (const [id, target] of this.remoteTargets) {
+      if (id === this.localId) continue;
+      const sprite = this.remotePlayers.get(id);
+      if (!sprite || !this.isPlayerVisible(id)) continue;
+
+      const prevX = sprite.x;
+      const { pos, arrived } = stepToward(
+        { x: sprite.x, y: sprite.y },
+        target,
+        MOVE_SPEED_PX_PER_SEC * 1.15,
+        dt,
+      );
+      sprite.setPosition(pos.x, pos.y);
+      this.noteMotion(id, prevX, pos.x, !arrived);
+      if (arrived) this.setWalking(id, false);
     }
   }
 
@@ -305,8 +329,7 @@ export class WorldScene extends Phaser.Scene {
 
   private hidePlayerSprite(id: string) {
     if (id === this.localId) return;
-    this.remoteTweens.get(id)?.stop();
-    this.remoteTweens.delete(id);
+    this.remoteTargets.delete(id);
     const sprite = this.remotePlayers.get(id);
     if (sprite) {
       sprite.destroy();
@@ -427,6 +450,10 @@ export class WorldScene extends Phaser.Scene {
     const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
     if (!sprite) {
       this.lastServerPos.set(id, { x, y });
+      if (id !== this.localId && this.isPlayerVisible(id)) {
+        this.ensurePlayer(id, "", x, y, false, DEFAULT_APPEARANCE);
+        this.remoteTargets.set(id, { x, y });
+      }
       return;
     }
 
@@ -435,6 +462,7 @@ export class WorldScene extends Phaser.Scene {
     if (this.tabHidden || document.hidden) {
       if (id === this.localId) this.serverPos = { x, y };
       sprite.setPosition(x, y);
+      this.remoteTargets.set(id, { x, y });
       this.setWalking(id, false);
       return;
     }
@@ -475,38 +503,18 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    const prev = this.remoteTweens.get(id);
-    prev?.stop();
+    // Remotes: update chase target — tickRemoteMotion lerps each frame
     const dist = Math.hypot(sprite.x - x, sprite.y - y);
-    if (dist < ARRIVE_EPSILON_PX) {
+    if (dist > 160) {
       sprite.setPosition(x, y);
-      this.remoteTweens.delete(id);
+      this.remoteTargets.set(id, { x, y });
       this.setWalking(id, false);
       return;
     }
-
-    if (dist > 128) {
-      sprite.setPosition(x, y);
-      this.remoteTweens.delete(id);
-      this.setWalking(id, false);
-      return;
+    this.remoteTargets.set(id, { x, y });
+    if (dist > ARRIVE_EPSILON_PX) {
+      this.setWalking(id, true);
     }
-
-    const prevX = sprite.x;
-    this.noteMotion(id, prevX, x, true);
-    const duration = Math.max(40, Math.min(90, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
-    const tween = this.tweens.add({
-      targets: sprite,
-      x,
-      y,
-      duration,
-      ease: "Linear",
-      onComplete: () => {
-        this.remoteTweens.delete(id);
-        this.setWalking(id, false);
-      },
-    });
-    this.remoteTweens.set(id, tween);
   }
 
   getLocalPos() {
@@ -710,8 +718,10 @@ export class WorldScene extends Phaser.Scene {
         st.moving = true;
       }
 
-      if (this.remoteTweens.has(id)) {
-        st.moving = true;
+      if (id !== this.localId && this.remoteTargets.has(id)) {
+        const target = this.remoteTargets.get(id)!;
+        const dist = Math.hypot(sprite.x - target.x, sprite.y - target.y);
+        if (dist > ARRIVE_EPSILON_PX) st.moving = true;
       }
 
       if (!st.moving || (id === this.localId && this.acting)) {
@@ -796,8 +806,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   removePlayer(id: string) {
-    this.remoteTweens.get(id)?.stop();
-    this.remoteTweens.delete(id);
+    this.remoteTargets.delete(id);
     this.walkState.delete(id);
     this.lastServerPos.delete(id);
     this.playerZones.delete(id);
@@ -812,7 +821,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   clearPlayers() {
-    this.stopAllRemoteTweens();
+    this.remoteTargets.clear();
     for (const id of [...this.remotePlayers.keys()]) {
       this.removePlayer(id);
     }
@@ -825,12 +834,5 @@ export class WorldScene extends Phaser.Scene {
     this.playerZones.clear();
     this.localZone = ZONES.TOWN;
     this.stopChopVfx(false);
-  }
-
-  private stopAllRemoteTweens() {
-    for (const [id, tween] of this.remoteTweens) {
-      tween.stop();
-      this.remoteTweens.delete(id);
-    }
   }
 }

@@ -139,6 +139,7 @@ export async function connectGame(
   let room: Room | null = null;
   let intentionalLeave = false;
   let reconnectAttempt = 0;
+  let posePollTimer: ReturnType<typeof setInterval> | null = null;
   let onlinePlayers: PlayerSnapshot[] = [];
   let localPlayerId = "";
   let hudState: HudLiveState = {
@@ -264,10 +265,16 @@ export async function connectGame(
     // Immediate pose + list entry
     syncMotion();
 
-    // Position / action / appearance / zone — do NOT touch inventory HUD here
-    p.onChange(() => {
-      syncMotion();
-    });
+    // Colyseus 0.15: prefer listen() for hot fields — onChange is unreliable for x/y streams
+    p.listen("x", () => syncMotion());
+    p.listen("y", () => syncMotion());
+    p.listen("zone", () => syncMotion());
+    p.listen("name", () => syncMotion());
+    p.listen("action", () => syncMotion());
+    p.listen("hairColor", () => syncMotion());
+    p.listen("skinColor", () => syncMotion());
+    p.listen("shirtColor", () => syncMotion());
+    p.listen("pantsColor", () => syncMotion());
 
     // Local HUD fields only when those properties actually change
     const maybeHud = () => {
@@ -286,7 +293,6 @@ export async function connectGame(
     p.listen("inventoryJson", () => maybeHud());
     p.listen("equipmentJson", () => maybeHud());
     p.listen("inventoryCapacity", () => maybeHud());
-    p.listen("zone", () => syncMotion());
   }
 
   function wireStateCallbacks(r: Room) {
@@ -385,6 +391,10 @@ export async function connectGame(
 
     room.onLeave((code) => {
       handlers.onStatus(`disconnected (${code})`);
+      if (posePollTimer) {
+        clearInterval(posePollTimer);
+        posePollTimer = null;
+      }
       room = null;
       if (!intentionalLeave) {
         scheduleReconnect();
@@ -394,6 +404,18 @@ export async function connectGame(
     room.onError((code, message) => {
       handlers.onStatus(`error ${code}: ${message}`);
     });
+
+    // Backup: force-reconcile poses each patch window in case a listen misses a tick
+    if (posePollTimer) clearInterval(posePollTimer);
+    posePollTimer = setInterval(() => {
+      const players = (room?.state as any)?.players;
+      if (!players?.forEach) return;
+      players.forEach((p: any, key: string) => {
+        const id = playerIdOf(p, key);
+        upsertOnlinePlayer(p, key);
+        handlers.reconcilePlayer(id, p.x, p.y, typeof p.zone === "string" ? p.zone : undefined);
+      });
+    }, 50);
   }
 
   function scheduleReconnect() {
@@ -417,6 +439,10 @@ export async function connectGame(
     },
     leave() {
       intentionalLeave = true;
+      if (posePollTimer) {
+        clearInterval(posePollTimer);
+        posePollTimer = null;
+      }
       room?.leave();
       room = null;
     },
