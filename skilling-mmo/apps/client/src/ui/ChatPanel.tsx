@@ -4,7 +4,7 @@ import type {
   ChatInboxThreadDto,
   PlayerSnapshot,
 } from "@skilling-mmo/shared";
-import { CHAT_MAX_BODY } from "@skilling-mmo/shared";
+import { CHAT_MAX_BODY, isSystemChatMessage } from "@skilling-mmo/shared";
 
 type ChatView = "public" | "inbox" | "thread";
 
@@ -151,7 +151,12 @@ export function ChatPanel({
             </div>
           )}
           <ul className="hud-chat-feed">
-            {messages.map((m) => (
+            {messages.map((m) =>
+              isSystemChatMessage(m) ? (
+                <li key={m.id} className="chat-system">
+                  <span className="chat-body">{m.body}</span>
+                </li>
+              ) : (
               <li key={m.id}>
                 <button
                   type="button"
@@ -180,7 +185,8 @@ export function ChatPanel({
                 )}
                 <span className="chat-body">{m.body}</span>
               </li>
-            ))}
+              ),
+            )}
             <div ref={bottomRef} />
           </ul>
           <div className="hud-chat-compose">

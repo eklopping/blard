@@ -477,6 +477,20 @@ body,
   flex: 1 1 100%;
 }
 
+.chat-system {
+  border-bottom: 1px solid rgba(110, 180, 170, 0.2);
+  padding: 0.25rem 0.35rem;
+  margin: 0.15rem 0;
+  background: rgba(70, 140, 130, 0.12);
+  border-left: 3px solid #5ec4b4;
+}
+
+.chat-system .chat-body {
+  color: #7ee0d0;
+  font-style: italic;
+  font-size: 0.72rem;
+}
+
 .hud-chat-compose,
 .hud-chat-new-dm {
   display: flex;

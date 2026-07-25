@@ -25,6 +25,7 @@ import {
   type ChatMessageDto,
   type EquipmentLoadout,
   type ItemLocation,
+  SYSTEM_CHAT_SENDER_ID,
 } from "@skilling-mmo/shared";
 import { WoodcuttingHandler, type SkillContext, type SkillHandler } from "../skills/SkillHandler.js";
 import { enqueueDirtyPlayer, flushDirtyPlayers } from "../persistence.js";
@@ -260,6 +261,19 @@ export class WorldRoom extends Room<WorldState> {
         inventoryCapacity: inventoryCapacity(equipment),
       },
     });
+
+    // Ephemeral system notice — broadcast only, never written to chat history
+    const loginNotice: ChatMessageDto = {
+      id: `sys_login_${player.id}_${Date.now()}`,
+      channel: "PUBLIC",
+      senderId: SYSTEM_CHAT_SENDER_ID,
+      senderName: "System",
+      recipientId: null,
+      threadKey: null,
+      body: `${player.name} has logged in.`,
+      createdAt: new Date().toISOString(),
+    };
+    this.broadcast("ChatMessage", { type: "ChatMessage", message: loginNotice });
   }
 
   async onLeave(client: Client) {

@@ -68,6 +68,8 @@ export {
   SHIRT_COLORS,
   PANTS_COLORS,
   PIXEL_TEMPLATE,
+  PIXEL_WALK_A,
+  PIXEL_WALK_B,
   PIXEL_W,
   PIXEL_H,
   EYE_COLOR,
@@ -351,6 +353,9 @@ export const CHAT_HISTORY_LIMIT = 50;
 
 export type ChatChannel = "PUBLIC" | "DIRECT";
 
+/** Ephemeral notices (login, etc.) — never persisted to chat history. */
+export const SYSTEM_CHAT_SENDER_ID = "system";
+
 export interface ChatMessageDto {
   id: string;
   channel: ChatChannel;
@@ -360,6 +365,10 @@ export interface ChatMessageDto {
   threadKey: string | null;
   body: string;
   createdAt: string;
+}
+
+export function isSystemChatMessage(message: Pick<ChatMessageDto, "senderId">): boolean {
+  return message.senderId === SYSTEM_CHAT_SENDER_ID;
 }
 
 export interface ChatInboxThreadDto {

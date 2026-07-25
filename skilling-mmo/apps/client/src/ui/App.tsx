@@ -16,7 +16,7 @@ import type {
   EquipmentLoadout,
   ItemLocation,
 } from "@skilling-mmo/shared";
-import { DEFAULT_APPEARANCE, INVENTORY_BASE_SLOTS } from "@skilling-mmo/shared";
+import { DEFAULT_APPEARANCE, INVENTORY_BASE_SLOTS, isSystemChatMessage } from "@skilling-mmo/shared";
 import {
   type GameSession,
   loadSession,
@@ -164,7 +164,11 @@ export function App() {
     if (r.ok) {
       const data = await r.json();
       if (chatModeRef.current === "public") {
-        setChatMessages(data.messages);
+        // Drop any system/ephemeral rows — login notices are live-only
+        const history = (data.messages as ChatMessageDto[]).filter(
+          (m) => !isSystemChatMessage(m),
+        );
+        setChatMessages(history);
       }
     }
   }, [gameToken]);
@@ -329,6 +333,11 @@ export function App() {
             if (cancelled) return;
             setChatError("");
             if (message.channel === "PUBLIC") {
+              // System notices (login, etc.) are live-only — never muted, always shown
+              if (isSystemChatMessage(message)) {
+                setChatMessages((prev) => [...prev, message]);
+                return;
+              }
               if (chatModeRef.current !== "public") return;
               if (
                 message.senderId !== selfIdRef.current &&

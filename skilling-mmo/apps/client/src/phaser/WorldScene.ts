@@ -12,16 +12,28 @@ import {
 } from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
-import { ensurePlayerTexture } from "./playerTexture";
+import { ensurePlayerTextures, type PlayerTextures } from "./playerTexture";
 
 type ActionResultMsg = Extract<ServerMessage, { type: "ActionResult" }>;
 
 const COOLDOWN_ALPHA = 0.4;
+const WALK_FRAME_MS = 140;
+const WALK_MOVE_EPSILON = 0.4;
+
+interface WalkState {
+  textures: PlayerTextures;
+  phaseMs: number;
+  frame: 0 | 1;
+  lastX: number;
+  lastY: number;
+  moving: boolean;
+}
 
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
   private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
   private remoteTweens = new Map<string, Phaser.Tweens.Tween>();
+  private walkState = new Map<string, WalkState>();
   private tree?: Phaser.GameObjects.Image;
   private predictedTarget?: { x: number; y: number };
   private serverPos?: { x: number; y: number };
@@ -82,11 +94,13 @@ export class WorldScene extends Phaser.Scene {
 
   update(_t: number, dt: number) {
     this.refreshResourceAlpha();
+    this.tickWalkAnims(dt);
 
     // Stay locked in place while performing an action
     if (this.acting) return;
     if (!this.localPlayer || !this.predictedTarget) return;
 
+    const prevX = this.localPlayer.x;
     const { pos, arrived } = stepToward(
       { x: this.localPlayer.x, y: this.localPlayer.y },
       this.predictedTarget,
@@ -94,7 +108,11 @@ export class WorldScene extends Phaser.Scene {
       dt,
     );
     this.localPlayer.setPosition(pos.x, pos.y);
-    if (arrived) this.predictedTarget = undefined;
+    this.noteMotion(this.localId!, prevX, pos.x, !arrived);
+    if (arrived) {
+      this.predictedTarget = undefined;
+      if (this.localId) this.setWalking(this.localId, false);
+    }
   }
 
   applySnapshot(snap: Extract<ServerMessage, { type: "StateSnapshot" }>) {
@@ -131,6 +149,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.acting) {
         // Hard-lock local sprite to server while acting
         if (dist > ARRIVE_EPSILON_PX) sprite.setPosition(x, y);
+        this.setWalking(id, false);
         return;
       }
 
@@ -143,7 +162,11 @@ export class WorldScene extends Phaser.Scene {
       }
 
       if (dist > ARRIVE_EPSILON_PX) {
+        const prevX = sprite.x;
         sprite.setPosition(x, y);
+        this.noteMotion(id, prevX, x, true);
+      } else {
+        this.setWalking(id, false);
       }
       return;
     }
@@ -154,8 +177,12 @@ export class WorldScene extends Phaser.Scene {
     if (dist < ARRIVE_EPSILON_PX) {
       sprite.setPosition(x, y);
       this.remoteTweens.delete(id);
+      this.setWalking(id, false);
       return;
     }
+
+    const prevX = sprite.x;
+    this.noteMotion(id, prevX, x, true);
     // Match ~50ms Colyseus patches so remotes stay continuous instead of lagging
     const duration = Math.max(40, Math.min(90, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
     const tween = this.tweens.add({
@@ -164,6 +191,10 @@ export class WorldScene extends Phaser.Scene {
       y,
       duration,
       ease: "Linear",
+      onComplete: () => {
+        this.remoteTweens.delete(id);
+        this.setWalking(id, false);
+      },
     });
     this.remoteTweens.set(id, tween);
   }
@@ -177,6 +208,7 @@ export class WorldScene extends Phaser.Scene {
     if (msg.ok && msg.action === "woodcutting") {
       this.acting = true;
       this.predictedTarget = undefined;
+      if (this.localId) this.setWalking(this.localId, false);
       this.startChopVfx();
       return;
     }
@@ -199,15 +231,12 @@ export class WorldScene extends Phaser.Scene {
     }
 
     if (!msg.ok) {
-      // Failed start (too_far, etc.) — keep engagement so walk-in can retry via server pending,
-      // but if we thought we were acting, clear VFX.
       this.acting = false;
       this.stopChopVfx(false);
     }
   }
 
   private tryEngageResource(resourceId: string) {
-    // Client-only cooldown: resource is unusable until the timer elapses
     if (this.isOnCooldown(resourceId)) return;
     if (this.acting && this.engagedResourceId === resourceId) return;
 
@@ -303,6 +332,76 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private noteMotion(id: string, fromX: number, toX: number, moving: boolean) {
+    const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
+    if (!sprite) return;
+    const dx = toX - fromX;
+    if (Math.abs(dx) > WALK_MOVE_EPSILON) {
+      sprite.setFlipX(dx < 0);
+    }
+    this.setWalking(id, moving);
+  }
+
+  private setWalking(id: string, moving: boolean) {
+    const st = this.walkState.get(id);
+    const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
+    if (!st || !sprite) return;
+    st.moving = moving;
+    if (!moving) {
+      st.phaseMs = 0;
+      st.frame = 0;
+      if (!this.acting || id !== this.localId) {
+        sprite.setTexture(st.textures.idle);
+        sprite.setScale(1);
+        if (!this.chopTween || id !== this.localId) sprite.angle = 0;
+      }
+    }
+  }
+
+  private tickWalkAnims(dt: number) {
+    for (const [id, st] of this.walkState) {
+      const sprite = this.remotePlayers.get(id) ?? (id === this.localId ? this.localPlayer : undefined);
+      if (!sprite) continue;
+
+      // Local predicted walk while a target exists
+      if (id === this.localId && this.predictedTarget && !this.acting) {
+        st.moving = true;
+      }
+
+      // Remotes still tweening count as walking
+      if (this.remoteTweens.has(id)) {
+        st.moving = true;
+      }
+
+      if (!st.moving || (id === this.localId && this.acting)) {
+        if (sprite.texture.key !== st.textures.idle && !(id === this.localId && this.acting)) {
+          sprite.setTexture(st.textures.idle);
+          sprite.setScale(1);
+        }
+        continue;
+      }
+
+      st.phaseMs += dt;
+      if (st.phaseMs >= WALK_FRAME_MS) {
+        st.phaseMs -= WALK_FRAME_MS;
+        st.frame = st.frame === 0 ? 1 : 0;
+      }
+      const tex = st.frame === 0 ? st.textures.walk0 : st.textures.walk1;
+      if (sprite.texture.key !== tex) sprite.setTexture(tex);
+
+      // Light bob / squash so the stride reads even at low res
+      const t = (st.phaseMs / WALK_FRAME_MS + st.frame) * Math.PI;
+      const bob = Math.sin(t) * 0.06;
+      sprite.setScale(1, 1 - Math.abs(bob));
+      if (!(id === this.localId && this.acting)) {
+        sprite.angle = Math.sin(t) * 3;
+      }
+
+      st.lastX = sprite.x;
+      st.lastY = sprite.y;
+    }
+  }
+
   private ensurePlayer(
     id: string,
     _name: string,
@@ -311,19 +410,41 @@ export class WorldScene extends Phaser.Scene {
     isLocal: boolean,
     look: Appearance,
   ) {
-    const key = ensurePlayerTexture(this, look);
+    const textures = ensurePlayerTextures(this, look);
     let sprite = this.remotePlayers.get(id);
     if (!sprite) {
-      sprite = this.add.image(x, y, key);
+      sprite = this.add.image(x, y, textures.idle);
       sprite.setOrigin(0.5, 1);
       sprite.setDepth(10);
       this.remotePlayers.set(id, sprite);
+      this.walkState.set(id, {
+        textures,
+        phaseMs: 0,
+        frame: 0,
+        lastX: x,
+        lastY: y,
+        moving: false,
+      });
       if (isLocal) {
         this.localPlayer = sprite;
         this.cameras.main.startFollow(sprite, true, 0.22, 0.22);
       }
     } else {
-      if (sprite.texture.key !== key) sprite.setTexture(key);
+      const st = this.walkState.get(id);
+      if (st) st.textures = textures;
+      else {
+        this.walkState.set(id, {
+          textures,
+          phaseMs: 0,
+          frame: 0,
+          lastX: x,
+          lastY: y,
+          moving: false,
+        });
+      }
+      if (sprite.texture.key !== textures.idle && sprite.texture.key !== textures.walk0 && sprite.texture.key !== textures.walk1) {
+        sprite.setTexture(textures.idle);
+      }
       if (!isLocal || (!this.predictedTarget && !this.acting)) {
         sprite.setPosition(x, y);
       }
@@ -334,6 +455,7 @@ export class WorldScene extends Phaser.Scene {
     if (id === this.localId) return;
     this.remoteTweens.get(id)?.stop();
     this.remoteTweens.delete(id);
+    this.walkState.delete(id);
     const sprite = this.remotePlayers.get(id);
     if (sprite) {
       sprite.destroy();

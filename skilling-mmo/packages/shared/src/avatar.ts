@@ -73,6 +73,42 @@ export const PIXEL_TEMPLATE: string[] = [
   ".L...L.",
 ];
 
+/** Walk cycle — left foot forward. */
+export const PIXEL_WALK_A: string[] = [
+  ".HHHHH.",
+  ".ESSSE.",
+  ".SSSSS.",
+  ".SSSSS.",
+  "TTTTTTT",
+  "STTTTTS",
+  "STTTTTS",
+  "STTTTTS",
+  ".PPPPP.",
+  ".PPPPP.",
+  "PP.PPP.",
+  "L....L.",
+  "L....L.",
+  "L......",
+];
+
+/** Walk cycle — right foot forward. */
+export const PIXEL_WALK_B: string[] = [
+  ".HHHHH.",
+  ".ESSSE.",
+  ".SSSSS.",
+  ".SSSSS.",
+  "TTTTTTT",
+  "STTTTTS",
+  "STTTTTS",
+  "STTTTTS",
+  ".PPPPP.",
+  ".PPPPP.",
+  ".PPP.PP",
+  ".L....L",
+  ".L....L",
+  "......L",
+];
+
 export const PIXEL_W = 7;
 export const PIXEL_H = 14;
 export const EYE_COLOR = "#6b5344";
@@ -103,12 +139,16 @@ export function colorForPixel(ch: string, look: Appearance): string | null {
 }
 
 /** RGBA buffer for Phaser / offscreen drawing (scale ≥ 1). */
-export function pixelAvatarRgba(look: Appearance, scale = 3): Uint8ClampedArray {
+export function pixelAvatarRgba(
+  look: Appearance,
+  scale = 3,
+  template: string[] = PIXEL_TEMPLATE,
+): Uint8ClampedArray {
   const w = PIXEL_W * scale;
   const h = PIXEL_H * scale;
   const data = new Uint8ClampedArray(w * h * 4);
   for (let y = 0; y < PIXEL_H; y++) {
-    const row = PIXEL_TEMPLATE[y];
+    const row = template[y] ?? PIXEL_TEMPLATE[y];
     for (let x = 0; x < PIXEL_W; x++) {
       const hex = colorForPixel(row[x], look);
       if (!hex) continue;
