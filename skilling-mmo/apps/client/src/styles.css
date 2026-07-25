@@ -259,8 +259,8 @@ body,
 .bank-window {
   position: fixed;
   z-index: 40;
-  width: min(360px, 92vw);
-  max-height: min(70vh, 560px);
+  width: min(480px, 94vw);
+  max-height: min(72vh, 620px);
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, rgba(18, 28, 16, 0.97), rgba(14, 22, 14, 0.96));
@@ -269,6 +269,11 @@ body,
   pointer-events: auto;
   color: var(--fg);
   font-family: var(--font-ui);
+}
+
+.bank-window .equip-hint {
+  margin: 0.45rem 0.65rem 0.15rem;
+  flex-shrink: 0;
 }
 
 .bank-window-title {
@@ -294,8 +299,8 @@ body,
 
 .bank-window-grid {
   overflow: auto;
-  padding: 0.55rem;
-  gap: 0.25rem;
+  padding: 0.65rem;
+  gap: 0.45rem;
   flex: 1;
   min-height: 0;
   scrollbar-width: none; /* Firefox — scrollable, no bar */
@@ -309,9 +314,21 @@ body,
 }
 
 .bank-window .slot {
-  font-size: 0.58rem;
-  min-height: 2.4rem;
-  padding: 1px;
+  font-size: 0.62rem;
+  min-height: 3.1rem;
+  min-width: 0;
+  padding: 0.3rem 0.2rem;
+  gap: 0.15rem;
+  line-height: 1.15;
+  overflow: hidden;
+}
+
+.bank-window .slot > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .equip-window-title {
