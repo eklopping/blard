@@ -44,6 +44,7 @@ export function App() {
     () => loadSession() ?? migrateLegacyAuth(),
   );
   const [panel, setPanel] = useState<Panel>("inventory");
+  const [bankOpen, setBankOpen] = useState(false);
   const [showTravel, setShowTravel] = useState(false);
   const [showShop, setShowShop] = useState(false);
   const [inventory, setInventory] = useState<InventorySlotDto[]>([]);
@@ -339,7 +340,10 @@ export function App() {
             if (cancelled) return;
             if (openPanel === "travel") setShowTravel(true);
             else if (openPanel === "shop") setShowShop(true);
-            else if (openPanel === "bank") setPanel("bank");
+            else if (openPanel === "bank") {
+              setBankOpen(true);
+              void refreshBank();
+            }
           },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);
@@ -417,8 +421,58 @@ export function App() {
   }, [gameToken]);
 
   useEffect(() => {
-    if (panel === "bank") void refreshBank();
-  }, [panel, refreshBank]);
+    if (bankOpen) void refreshBank();
+  }, [bankOpen, refreshBank]);
+
+  const syncAfterBank = useCallback(async () => {
+    await refreshBank();
+    if (!gameToken) return;
+    const r = await fetch(`${API}/player/inventory`, {
+      headers: { Authorization: `Bearer ${gameToken}` },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      setInventory(d.slots);
+      if (typeof d.capacity === "number") setInventoryCapacity(d.capacity);
+    }
+    conn.current?.sendIntent({ type: "SyncInventory" });
+  }, [gameToken, refreshBank]);
+
+  const handleItemDrag = useCallback(
+    async (from: ItemLocation, to: ItemLocation) => {
+      if (from.kind === "bank" || to.kind === "bank") {
+        if (from.kind === "equipment" || to.kind === "equipment") return;
+        if (!gameToken) return;
+        const r = await fetch(`${API}/player/bank/move`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${gameToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ from, to }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          const hints: Record<string, string> = {
+            bank_full: "Bank is full",
+            inventory_full: "Bag is full",
+            stack_full: "Stack is full",
+            empty: "Nothing to move",
+            invalid_slot: "Invalid slot",
+            cannot_partial_swap: "Can't partially swap different items",
+          };
+          const err = typeof d.error === "string" ? d.error : "move_failed";
+          setStatus(hints[err] ?? `Bank move failed (${err})`);
+          window.setTimeout(() => setStatus("connected"), 2200);
+          return;
+        }
+        await syncAfterBank();
+        return;
+      }
+      conn.current?.sendIntent({ type: "ItemDrag", from, to });
+    },
+    [gameToken, syncAfterBank],
+  );
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -522,17 +576,9 @@ export function App() {
             bank={bank}
             token={gameToken!}
             apiBase={API}
-            onRefreshBank={async () => {
-              await refreshBank();
-              const r = await fetch(`${API}/player/inventory`, {
-                headers: { Authorization: `Bearer ${gameToken}` },
-              });
-              if (r.ok) {
-                const d = await r.json();
-                setInventory(d.slots);
-              }
-              conn.current?.sendIntent({ type: "SyncInventory" });
-            }}
+            bankOpen={bankOpen}
+            onBankOpen={setBankOpen}
+            onRefreshBank={syncAfterBank}
             onProfiles={switchCharacter}
             onLogout={logoutAccount}
             selfId={selfId}
@@ -549,7 +595,7 @@ export function App() {
             onUnmutePlayer={(id) => void unmuteChatPlayer(id)}
             onLoadPublicChat={() => void loadPublic()}
             onItemDrag={(from: ItemLocation, to: ItemLocation) => {
-              conn.current?.sendIntent({ type: "ItemDrag", from, to });
+              void handleItemDrag(from, to);
             }}
           />
         )}

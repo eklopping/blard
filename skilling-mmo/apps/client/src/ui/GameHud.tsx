@@ -14,12 +14,12 @@ import type {
 import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
 import { InventoryPanel } from "./InventoryPanel";
-import { BankPanel } from "./BankPanel";
 import { MarketPanel } from "./MarketPanel";
 import { ChatPanel } from "./ChatPanel";
 import { EquipmentWindow } from "./EquipmentWindow";
+import { BankWindow } from "./BankWindow";
 
-export type HudPanel = "inventory" | "bank" | "market";
+export type HudPanel = "inventory" | "market";
 
 export function GameHud({
   displayName,
@@ -55,6 +55,8 @@ export function GameHud({
   equipment,
   inventoryCapacity,
   onItemDrag,
+  bankOpen,
+  onBankOpen,
 }: {
   displayName: string;
   username: string;
@@ -89,6 +91,8 @@ export function GameHud({
   onLoadPublicChat: () => void;
   equipment?: EquipmentLoadout;
   onItemDrag?: (from: ItemLocation, to: ItemLocation) => void;
+  bankOpen: boolean;
+  onBankOpen: (open: boolean) => void;
 }) {
   const [equipOpen, setEquipOpen] = useState(false);
   const traitName =
@@ -102,17 +106,6 @@ export function GameHud({
         capacity={inventoryCapacity}
         embedded
         onItemDrag={onItemDrag}
-      />
-    );
-  } else if (panel === "bank") {
-    body = (
-      <BankPanel
-        embedded
-        inventory={inventory}
-        bank={bank}
-        token={token}
-        apiBase={apiBase}
-        onRefresh={onRefreshBank}
       />
     );
   } else {
@@ -145,8 +138,12 @@ export function GameHud({
           </button>
           <button
             type="button"
-            className={panel === "bank" ? "active" : ""}
-            onClick={() => onPanel("bank")}
+            className={`equip-nav-btn ${bankOpen ? "active" : ""}`}
+            onClick={() => {
+              const next = !bankOpen;
+              onBankOpen(next);
+              if (next) void onRefreshBank();
+            }}
           >
             Bank
           </button>
@@ -218,6 +215,13 @@ export function GameHud({
         open={equipOpen}
         onClose={() => setEquipOpen(false)}
         loadout={equipment ?? {}}
+        onItemDrag={onItemDrag}
+      />
+
+      <BankWindow
+        open={bankOpen}
+        onClose={() => onBankOpen(false)}
+        bank={bank}
         onItemDrag={onItemDrag}
       />
     </>

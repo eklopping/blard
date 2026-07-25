@@ -69,7 +69,7 @@ export function InventoryPanel({
     <div className={embedded ? "hud-embed hud-inv-embed" : "panel"}>
       {!embedded && <h2>Inventory</h2>}
       {embedded && <h2>Bag ({capacity} slots)</h2>}
-      <p className="tiny-hint">Drag items between bag slots or onto Equipment.</p>
+      <p className="tiny-hint">Drag items between bag slots, Equipment, or Bank.</p>
       <div
         className="grid grid-inv"
         style={{ gridTemplateColumns: `repeat(${INVENTORY_ROW_SIZE}, 1fr)` }}

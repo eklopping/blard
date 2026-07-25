@@ -331,10 +331,11 @@ export function serializeEquipment(loadout: EquipmentLoadout): string {
   return JSON.stringify(loadout);
 }
 
-/** Drag-and-drop locations for inventory / equipment management. */
+/** Drag-and-drop locations for inventory / equipment / bank management. */
 export type ItemLocation =
   | { kind: "inventory"; slot: number }
-  | { kind: "equipment"; slot: EquipmentSlotId };
+  | { kind: "equipment"; slot: EquipmentSlotId }
+  | { kind: "bank"; slot: number };
 
 export const WOODCUTTING = {
   NORMAL_TREE: {

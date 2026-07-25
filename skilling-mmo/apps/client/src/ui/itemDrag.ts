@@ -16,6 +16,9 @@ export function decodeItemDrag(raw: string): ItemLocation | null {
     if (parsed?.kind === "equipment" && typeof parsed.slot === "string" && isEquipmentSlotId(parsed.slot)) {
       return { kind: "equipment", slot: parsed.slot };
     }
+    if (parsed?.kind === "bank" && typeof parsed.slot === "number") {
+      return { kind: "bank", slot: parsed.slot };
+    }
     return null;
   } catch {
     return null;

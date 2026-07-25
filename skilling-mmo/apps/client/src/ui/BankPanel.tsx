@@ -1,5 +1,7 @@
 import type { InventorySlotDto } from "@skilling-mmo/shared";
+import { ITEM_DEFS } from "@skilling-mmo/shared";
 
+/** Legacy click-to-transfer bank panel (kept for optional embedded use). Prefer BankWindow. */
 export function BankPanel({
   inventory,
   bank,
@@ -51,7 +53,7 @@ export function BankPanel({
             className={`slot ${s.itemId ? "" : "empty"}`}
             onClick={() => s.itemId && deposit(s.slot, s.quantity)}
           >
-            {s.itemId ? `${s.itemId}×${s.quantity}` : ""}
+            {s.itemId ? `${ITEM_DEFS[s.itemId]?.name ?? s.itemId}×${s.quantity}` : ""}
           </div>
         ))}
       </div>
@@ -63,7 +65,7 @@ export function BankPanel({
             className={`slot ${s.itemId ? "" : "empty"}`}
             onClick={() => s.itemId && withdraw(s.slot, s.quantity)}
           >
-            {s.itemId ? `${s.itemId}×${s.quantity}` : ""}
+            {s.itemId ? `${ITEM_DEFS[s.itemId]?.name ?? s.itemId}×${s.quantity}` : ""}
           </div>
         ))}
       </div>

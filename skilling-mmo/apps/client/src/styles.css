@@ -256,6 +256,55 @@ body,
   font-family: var(--font-ui);
 }
 
+.bank-window {
+  position: fixed;
+  z-index: 40;
+  width: min(420px, 92vw);
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(18, 28, 16, 0.97), rgba(14, 22, 14, 0.96));
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  color: var(--fg);
+  font-family: var(--font-ui);
+}
+
+.bank-window-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  background: rgba(201, 162, 39, 0.2);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  color: #e6c84a;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.bank-window-title:active {
+  cursor: grabbing;
+}
+
+.bank-window-grid {
+  overflow: auto;
+  padding: 0.55rem;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+}
+
+.bank-window .slot {
+  font-size: 0.65rem;
+  min-height: 2.6rem;
+}
+
 .equip-window-title {
   display: flex;
   align-items: center;
