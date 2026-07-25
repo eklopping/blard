@@ -4,14 +4,19 @@ import {
   DEFAULT_APPEARANCE,
   MOVE_SPEED_PX_PER_SEC,
   ARRIVE_EPSILON_PX,
+  ACTION_REPEAT_COOLDOWN_MS,
   snapToTileCenter,
-  findApproachPoint,
+  findClosestSideApproach,
   stepToward,
   type Appearance,
 } from "@skilling-mmo/shared";
 import type { ServerMessage } from "@skilling-mmo/shared";
 import type { GameCallbacks } from "./createGame";
 import { ensurePlayerTexture } from "./playerTexture";
+
+type ActionResultMsg = Extract<ServerMessage, { type: "ActionResult" }>;
+
+const COOLDOWN_ALPHA = 0.4;
 
 export class WorldScene extends Phaser.Scene {
   private localPlayer?: Phaser.GameObjects.Image;
@@ -24,6 +29,14 @@ export class WorldScene extends Phaser.Scene {
   private localId?: string;
   private callbacks!: GameCallbacks;
 
+  /** Resource the local player is engaged with (continuous gather loop). */
+  private engagedResourceId: string | null = null;
+  /** True while server reports an in-progress skill action. */
+  private acting = false;
+  /** Client-only cooldown end times (ms since epoch) per resource. */
+  private cooldownUntil = new Map<string, number>();
+  private repeatTimer?: ReturnType<typeof setTimeout>;
+
   constructor() {
     super("world");
   }
@@ -32,6 +45,11 @@ export class WorldScene extends Phaser.Scene {
     this.callbacks = this.registry.get("gameCallbacks");
     const setWorld = this.registry.get("setWorldScene") as (s: WorldScene) => void;
     setWorld(this);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearRepeatTimer();
+      this.cancelEngagement();
+    });
 
     const map = this.make.tilemap({ key: "world" });
     const tileset = map.addTilesetImage("grass", "tile_grass");
@@ -46,19 +64,7 @@ export class WorldScene extends Phaser.Scene {
     this.tree = this.add.image(320, 240, "tree");
     this.tree.setInteractive({ useHandCursor: true });
     this.tree.on("pointerdown", () => {
-      // Server walks into range; client only predicts when out of range
-      if (this.localPlayer) {
-        const from = { x: this.localPlayer.x, y: this.localPlayer.y };
-        const res = { x: this.tree!.x, y: this.tree!.y };
-        const dist = Math.hypot(from.x - res.x, from.y - res.y);
-        if (dist > WOODCUTTING.NORMAL_TREE.interactRange) {
-          const approach = findApproachPoint(from, res, WOODCUTTING.NORMAL_TREE.interactRange);
-          if (approach) this.predictedTarget = approach;
-        } else {
-          this.predictedTarget = undefined;
-        }
-      }
-      this.callbacks.onInteractTree(WOODCUTTING.NORMAL_TREE.resourceId);
+      this.tryEngageResource(WOODCUTTING.NORMAL_TREE.resourceId);
     });
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
@@ -66,16 +72,20 @@ export class WorldScene extends Phaser.Scene {
       if (this.tree && this.tree.getBounds().contains(pointer.worldX, pointer.worldY)) return;
       const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
       if (!snapped) return;
+      // Click away cancels the gather loop and any in-progress action
+      this.cancelEngagement();
       this.predictedTarget = snapped;
       this.callbacks.onMove(snapped.x, snapped.y);
     });
   }
 
   update(_t: number, dt: number) {
+    this.refreshResourceAlpha();
+
+    // Stay locked in place while performing an action
+    if (this.acting) return;
     if (!this.localPlayer || !this.predictedTarget) return;
 
-    // Do not soft-correct toward server while predicting — patch lag would
-    // rubber-band the local sprite back into a small box around the last ACK.
     const { pos, arrived } = stepToward(
       { x: this.localPlayer.x, y: this.localPlayer.y },
       this.predictedTarget,
@@ -104,9 +114,9 @@ export class WorldScene extends Phaser.Scene {
     for (const r of snap.resources) {
       if (r.kind === "tree" && this.tree) {
         this.tree.setPosition(r.x, r.y);
-        this.tree.setAlpha(r.available ? 1 : 0.4);
       }
     }
+    this.refreshResourceAlpha();
   }
 
   reconcilePlayer(id: string, x: number, y: number) {
@@ -117,8 +127,13 @@ export class WorldScene extends Phaser.Scene {
       this.serverPos = { x, y };
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
 
+      if (this.acting) {
+        // Hard-lock local sprite to server while acting
+        if (dist > ARRIVE_EPSILON_PX) sprite.setPosition(x, y);
+        return;
+      }
+
       if (this.predictedTarget) {
-        // Only correct gross desync while walking; keep prediction otherwise
         if (dist > 256) {
           sprite.setPosition(x, y);
           this.predictedTarget = undefined;
@@ -126,7 +141,6 @@ export class WorldScene extends Phaser.Scene {
         return;
       }
 
-      // Idle: snap to authoritative server position
       if (dist > ARRIVE_EPSILON_PX) {
         sprite.setPosition(x, y);
       }
@@ -156,9 +170,112 @@ export class WorldScene extends Phaser.Scene {
     return { x: this.localPlayer?.x ?? 160, y: this.localPlayer?.y ?? 160 };
   }
 
-  predictChopStart() {
+  /** Handle server ActionResult — drives chop VFX and the client gather loop. */
+  onActionResult(msg: ActionResultMsg) {
+    if (msg.ok && msg.action === "woodcutting") {
+      this.acting = true;
+      this.predictedTarget = undefined;
+      this.startChopVfx();
+      return;
+    }
+
+    if (msg.ok && msg.action === "woodcutting_complete") {
+      this.acting = false;
+      this.stopChopVfx(true);
+      const resourceId = msg.resourceId ?? this.engagedResourceId ?? WOODCUTTING.NORMAL_TREE.resourceId;
+      this.beginClientCooldown(resourceId);
+      if (this.engagedResourceId === resourceId) {
+        this.scheduleRepeat(resourceId);
+      }
+      return;
+    }
+
+    if (msg.ok && msg.action === "cancel") {
+      this.acting = false;
+      this.stopChopVfx(false);
+      return;
+    }
+
+    if (!msg.ok) {
+      // Failed start (too_far, etc.) — keep engagement so walk-in can retry via server pending,
+      // but if we thought we were acting, clear VFX.
+      this.acting = false;
+      this.stopChopVfx(false);
+    }
+  }
+
+  private tryEngageResource(resourceId: string) {
+    // Client-only cooldown: resource is unusable until the timer elapses
+    if (this.isOnCooldown(resourceId)) return;
+    if (this.acting && this.engagedResourceId === resourceId) return;
+
+    this.engagedResourceId = resourceId;
+    this.clearRepeatTimer();
+
+    if (this.localPlayer && this.tree && resourceId === WOODCUTTING.NORMAL_TREE.resourceId) {
+      const from = { x: this.localPlayer.x, y: this.localPlayer.y };
+      const res = { x: this.tree.x, y: this.tree.y };
+      const approach = findClosestSideApproach(from, res);
+      if (approach) {
+        const atStand =
+          Math.hypot(from.x - approach.x, from.y - approach.y) <= ARRIVE_EPSILON_PX + 4;
+        this.predictedTarget = atStand ? undefined : approach;
+      }
+    }
+
+    this.callbacks.onInteractTree(resourceId);
+  }
+
+  private cancelEngagement() {
+    this.engagedResourceId = null;
+    this.acting = false;
+    this.clearRepeatTimer();
+    this.stopChopVfx(false);
+  }
+
+  private beginClientCooldown(resourceId: string) {
+    this.cooldownUntil.set(resourceId, Date.now() + ACTION_REPEAT_COOLDOWN_MS);
+    this.refreshResourceAlpha();
+  }
+
+  private isOnCooldown(resourceId: string): boolean {
+    const until = this.cooldownUntil.get(resourceId);
+    if (!until) return false;
+    if (Date.now() >= until) {
+      this.cooldownUntil.delete(resourceId);
+      return false;
+    }
+    return true;
+  }
+
+  private scheduleRepeat(resourceId: string) {
+    this.clearRepeatTimer();
+    const until = this.cooldownUntil.get(resourceId) ?? Date.now();
+    const delay = Math.max(0, until - Date.now());
+    this.repeatTimer = setTimeout(() => {
+      this.repeatTimer = undefined;
+      if (this.engagedResourceId !== resourceId) return;
+      this.cooldownUntil.delete(resourceId);
+      this.refreshResourceAlpha();
+      this.callbacks.onInteractTree(resourceId);
+    }, delay);
+  }
+
+  private clearRepeatTimer() {
+    if (this.repeatTimer) {
+      clearTimeout(this.repeatTimer);
+      this.repeatTimer = undefined;
+    }
+  }
+
+  private refreshResourceAlpha() {
+    if (!this.tree) return;
+    const id = WOODCUTTING.NORMAL_TREE.resourceId;
+    this.tree.setAlpha(this.isOnCooldown(id) ? COOLDOWN_ALPHA : 1);
+  }
+
+  private startChopVfx() {
     if (!this.localPlayer) return;
-    this.predictedTarget = undefined;
     this.chopTween?.stop();
     this.chopTween = this.tweens.add({
       targets: this.localPlayer,
@@ -169,10 +286,11 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
-  predictChopEnd() {
+  private stopChopVfx(bounceTree: boolean) {
     this.chopTween?.stop();
+    this.chopTween = undefined;
     if (this.localPlayer) this.localPlayer.angle = 0;
-    if (this.tree) {
+    if (bounceTree && this.tree) {
       this.tweens.add({
         targets: this.tree,
         scaleX: 1.1,
@@ -204,7 +322,7 @@ export class WorldScene extends Phaser.Scene {
       }
     } else {
       if (sprite.texture.key !== key) sprite.setTexture(key);
-      if (!isLocal || !this.predictedTarget) {
+      if (!isLocal || (!this.predictedTarget && !this.acting)) {
         sprite.setPosition(x, y);
       }
     }

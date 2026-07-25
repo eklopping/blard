@@ -1,10 +1,11 @@
 import {
   MOVE_SPEED_PX_PER_SEC,
   MOVE_TICK_MS,
+  ARRIVE_EPSILON_PX,
   createOpenWalkGrid,
   snapToTileCenter,
   stepToward,
-  findApproachPoint,
+  findClosestSideApproach,
   type WalkGrid,
   type Vec2,
 } from "@skilling-mmo/shared";
@@ -53,8 +54,8 @@ export class MovementController {
   }
 
   /**
-   * If already in range, returns { inRange: true }.
-   * Otherwise sets approach target + pendingInteract and returns { inRange: false, target }.
+   * Walk to the closer left/right stand tile, then interact.
+   * If already standing on that side in range, returns { inRange: true }.
    */
   beginInteract(
     playerId: string,
@@ -63,16 +64,25 @@ export class MovementController {
     resource: Vec2,
     interactRange: number,
   ): { inRange: true } | { inRange: false; target: Vec2 | null } {
-    const dist = Math.hypot(from.x - resource.x, from.y - resource.y);
-    if (dist <= interactRange) {
-      const state = this.ensure(playerId);
+    const approach = findClosestSideApproach(from, resource, undefined, this.grid);
+    const state = this.ensure(playerId);
+
+    if (!approach) {
+      state.target = null;
+      state.pendingInteract = null;
+      return { inRange: false, target: null };
+    }
+
+    const atStand =
+      Math.hypot(from.x - approach.x, from.y - approach.y) <= ARRIVE_EPSILON_PX + 4;
+    const inResRange = Math.hypot(from.x - resource.x, from.y - resource.y) <= interactRange;
+
+    if (atStand && inResRange) {
       state.target = null;
       state.pendingInteract = null;
       return { inRange: true };
     }
 
-    const approach = findApproachPoint(from, resource, interactRange, this.grid);
-    const state = this.ensure(playerId);
     state.target = approach;
     state.pendingInteract = resourceId;
     return { inRange: false, target: approach };

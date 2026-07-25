@@ -15,6 +15,15 @@ export const MOVE_TICK_MS = 50;
 /** Arrive when within this many pixels of target. */
 export const ARRIVE_EPSILON_PX = 2;
 
+/**
+ * Client-only pacing after a successful gather tick before the local loop
+ * re-issues InteractResource. Not enforced by the server.
+ */
+export const ACTION_REPEAT_COOLDOWN_MS = 5000;
+
+/** Horizontal stand offset from a resource center (left/right sides). */
+export const RESOURCE_SIDE_OFFSET_PX = TILE_SIZE;
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -170,4 +179,25 @@ export function findApproachPoint(
     }
   }
   return best;
+}
+
+/**
+ * Stand on the left or right side of a resource (tile-snapped), picking the
+ * side closer to the player. Used for skilling / future interactables.
+ */
+export function findClosestSideApproach(
+  from: Vec2,
+  resource: Vec2,
+  sideOffset: number = RESOURCE_SIDE_OFFSET_PX,
+  grid?: WalkGrid,
+): Vec2 | null {
+  const g = grid ?? createOpenWalkGrid();
+  const left = snapToTileCenter(resource.x - sideOffset, resource.y, g);
+  const right = snapToTileCenter(resource.x + sideOffset, resource.y, g);
+  if (!left && !right) return null;
+  if (!left) return right;
+  if (!right) return left;
+  const dLeft = Math.hypot(left.x - from.x, left.y - from.y);
+  const dRight = Math.hypot(right.x - from.x, right.y - from.y);
+  return dLeft <= dRight ? left : right;
 }

@@ -87,6 +87,8 @@ export {
   MOVE_SPEED_PX_PER_SEC,
   MOVE_TICK_MS,
   ARRIVE_EPSILON_PX,
+  ACTION_REPEAT_COOLDOWN_MS,
+  RESOURCE_SIDE_OFFSET_PX,
   createOpenWalkGrid,
   worldToTile,
   tileToWorldCenter,
@@ -95,6 +97,7 @@ export {
   snapToTileCenter,
   stepToward,
   findApproachPoint,
+  findClosestSideApproach,
   type Vec2,
   type TileCoord,
   type WalkGrid,
@@ -206,7 +209,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: "StateSnapshot"; players: PlayerSnapshot[]; resources: ResourceSnapshot[]; you: SelfSnapshot }
   | { type: "StateDelta"; players?: PlayerSnapshot[]; resources?: ResourceSnapshot[] }
-  | { type: "ActionResult"; ok: boolean; reason?: string; action?: string }
+  | { type: "ActionResult"; ok: boolean; reason?: string; action?: string; resourceId?: string }
   | { type: "InventoryUpdate"; slots: InventorySlotDto[] }
   | { type: "SkillUpdate"; skill: SkillId; level: number; xp: number }
   | { type: "BankUpdate"; slots: BankSlotDto[] }

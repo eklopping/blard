@@ -323,9 +323,13 @@ export class WorldRoom extends Room<WorldState> {
         type: "ActionResult",
         ok: false,
         reason: "unknown_resource",
+        resourceId,
       });
       return;
     }
+
+    // Lock in place for the duration of the action
+    this.movement.cancelMovement(playerId);
 
     const ctx = this.buildCtx(playerId, ps);
     const start = handler.tryStart(ctx, resourceId);
@@ -334,6 +338,7 @@ export class WorldRoom extends Room<WorldState> {
         type: "ActionResult",
         ok: false,
         reason: start.reason,
+        resourceId,
       });
       return;
     }
@@ -349,16 +354,20 @@ export class WorldRoom extends Room<WorldState> {
       type: "ActionResult",
       ok: true,
       action: "woodcutting",
+      resourceId,
     });
   }
 
   private moveTick() {
     this.movement.tick(
       (playerId) => {
+        // Stay locked while performing a skill action
+        if (this.actions.has(playerId)) return undefined;
         const ps = this.state.players.get(playerId);
         return ps ? { x: ps.x, y: ps.y } : undefined;
       },
       (playerId, pos) => {
+        if (this.actions.has(playerId)) return;
         const ps = this.state.players.get(playerId);
         if (!ps) return;
         ps.x = pos.x;
@@ -366,6 +375,7 @@ export class WorldRoom extends Room<WorldState> {
         enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
       },
       (playerId, pos, pendingInteract) => {
+        if (this.actions.has(playerId)) return;
         const ps = this.state.players.get(playerId);
         if (!ps) return;
         ps.x = pos.x;
@@ -540,6 +550,7 @@ export class WorldRoom extends Room<WorldState> {
           type: "ActionResult",
           ok: true,
           action: "woodcutting_complete",
+          resourceId: action.resourceId,
         });
       }
 

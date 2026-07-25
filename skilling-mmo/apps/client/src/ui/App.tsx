@@ -289,12 +289,7 @@ export function App() {
             });
           },
           onAction: (msg) => {
-            if (msg.ok && msg.action === "woodcutting") {
-              bridge.current?.predictChopStart();
-            }
-            if (msg.ok && msg.action === "woodcutting_complete") {
-              bridge.current?.predictChopEnd();
-            }
+            bridge.current?.onActionResult(msg);
           },
           onStatus: (s) => {
             if (!cancelled) setStatus(s);
