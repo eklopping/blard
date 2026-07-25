@@ -156,7 +156,8 @@ export class WorldScene extends Phaser.Scene {
       this.remoteTweens.delete(id);
       return;
     }
-    const duration = Math.max(40, Math.min(400, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
+    // Match ~50ms Colyseus patches so remotes stay continuous instead of lagging
+    const duration = Math.max(40, Math.min(90, (dist / MOVE_SPEED_PX_PER_SEC) * 1000));
     const tween = this.tweens.add({
       targets: sprite,
       x,
@@ -319,13 +320,24 @@ export class WorldScene extends Phaser.Scene {
       this.remotePlayers.set(id, sprite);
       if (isLocal) {
         this.localPlayer = sprite;
-        this.cameras.main.startFollow(sprite, true, 0.12, 0.12);
+        this.cameras.main.startFollow(sprite, true, 0.22, 0.22);
       }
     } else {
       if (sprite.texture.key !== key) sprite.setTexture(key);
       if (!isLocal || (!this.predictedTarget && !this.acting)) {
         sprite.setPosition(x, y);
       }
+    }
+  }
+
+  removePlayer(id: string) {
+    if (id === this.localId) return;
+    this.remoteTweens.get(id)?.stop();
+    this.remoteTweens.delete(id);
+    const sprite = this.remotePlayers.get(id);
+    if (sprite) {
+      sprite.destroy();
+      this.remotePlayers.delete(id);
     }
   }
 }

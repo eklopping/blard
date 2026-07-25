@@ -57,6 +57,7 @@ export interface ConnectHandlers {
   onChatError: (error: string) => void;
   getPredictedPos: () => { x: number; y: number };
   reconcilePlayer: (id: string, x: number, y: number) => void;
+  removePlayer?: (id: string) => void;
 }
 
 function errorText(e: unknown): string {
@@ -118,6 +119,10 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
   };
 }
 
+function playerIdOf(p: any, mapKey: string): string {
+  return typeof p?.id === "string" && p.id ? p.id : mapKey;
+}
+
 export async function connectGame(
   token: string,
   handlers: ConnectHandlers,
@@ -137,8 +142,13 @@ export async function connectGame(
     inventoryCapacity: INVENTORY_BASE_SLOTS,
     equipment: {},
   };
+  /** Last inventoryJson string applied — skip redundant React updates. */
+  let lastInventoryJson = "";
+  let lastEquipmentJson = "";
 
   function applySkill(s: SkillProgressDto) {
+    const existing = hudState.skills.find((x) => x.skill === s.skill);
+    if (existing && existing.level === s.level && existing.xp === s.xp) return;
     const rest = hudState.skills.filter((x) => x.skill !== s.skill);
     hudState = {
       ...hudState,
@@ -162,16 +172,16 @@ export async function connectGame(
   }
 
   function applyEquipment(equipment: EquipmentLoadout, capacity?: number) {
+    const nextCap = capacity ?? hudState.inventoryCapacity;
     hudState = {
       ...hudState,
       equipment,
-      inventoryCapacity: capacity ?? hudState.inventoryCapacity,
+      inventoryCapacity: nextCap,
     };
-    handlers.onEquipment?.(equipment, hudState.inventoryCapacity);
+    handlers.onEquipment?.(equipment, nextCap);
   }
 
-  /** Apply HUD fields from synced Colyseus PlayerState (reliable real-time path). */
-  function applyHudFromPlayerState(p: any) {
+  function applyLocalHudFields(p: any) {
     if (typeof p.woodcuttingLevel === "number" && typeof p.woodcuttingXp === "number") {
       applySkill({
         skill: SKILLS.WOODCUTTING,
@@ -182,17 +192,90 @@ export async function connectGame(
     if (typeof p.coins === "number") {
       applyCoins(p.coins);
     }
-    if (typeof p.equipmentJson === "string") {
-      const equipment = parseEquipmentJson(p.equipmentJson);
-      applyEquipment(
-        equipment,
-        typeof p.inventoryCapacity === "number" ? p.inventoryCapacity : undefined,
-      );
-    } else if (typeof p.inventoryCapacity === "number") {
+    if (typeof p.inventoryCapacity === "number" && p.inventoryCapacity !== hudState.inventoryCapacity) {
       hudState = { ...hudState, inventoryCapacity: p.inventoryCapacity };
     }
-    const inv = parseInventoryJson(p.inventoryJson);
-    if (inv) applyInventory(inv);
+    if (typeof p.equipmentJson === "string" && p.equipmentJson !== lastEquipmentJson) {
+      lastEquipmentJson = p.equipmentJson;
+      applyEquipment(
+        parseEquipmentJson(p.equipmentJson),
+        typeof p.inventoryCapacity === "number" ? p.inventoryCapacity : undefined,
+      );
+    }
+    if (typeof p.inventoryJson === "string" && p.inventoryJson !== lastInventoryJson) {
+      lastInventoryJson = p.inventoryJson;
+      const inv = parseInventoryJson(p.inventoryJson);
+      if (inv) applyInventory(inv);
+    }
+  }
+
+  function upsertOnlinePlayer(p: any, mapKey: string) {
+    const id = playerIdOf(p, mapKey);
+    const snap: PlayerSnapshot = {
+      id,
+      name: p.name,
+      x: p.x,
+      y: p.y,
+      action: p.action || null,
+      appearance: {
+        hairColor: p.hairColor,
+        skinColor: p.skinColor,
+        shirtColor: p.shirtColor,
+        pantsColor: p.pantsColor,
+      },
+    };
+    const idx = onlinePlayers.findIndex((o) => o.id === id);
+    if (idx >= 0) onlinePlayers[idx] = snap;
+    else onlinePlayers.push(snap);
+  }
+
+  function removeOnlinePlayer(id: string) {
+    onlinePlayers = onlinePlayers.filter((o) => o.id !== id);
+  }
+
+  function bindPlayer(p: any, mapKey: string) {
+    const syncMotion = () => {
+      const id = playerIdOf(p, mapKey);
+      upsertOnlinePlayer(p, mapKey);
+      handlers.reconcilePlayer(id, p.x, p.y);
+    };
+
+    // Immediate pose + list entry
+    syncMotion();
+
+    // Position / action / appearance — do NOT touch inventory HUD here
+    p.onChange(() => {
+      syncMotion();
+    });
+
+    // Local HUD fields only when those properties actually change
+    const maybeHud = () => {
+      const id = playerIdOf(p, mapKey);
+      if (!localPlayerId || (id !== localPlayerId && mapKey !== localPlayerId)) return;
+      applyLocalHudFields(p);
+    };
+
+    p.listen("woodcuttingLevel", () => maybeHud());
+    p.listen("woodcuttingXp", () => maybeHud());
+    p.listen("coins", () => maybeHud());
+    p.listen("inventoryJson", () => maybeHud());
+    p.listen("equipmentJson", () => maybeHud());
+    p.listen("inventoryCapacity", () => maybeHud());
+  }
+
+  function wireStateCallbacks(r: Room) {
+    const players = (r.state as any).players;
+    if (!players?.onAdd) return;
+
+    players.onAdd((p: any, mapKey: string) => {
+      bindPlayer(p, mapKey);
+    });
+
+    players.onRemove((p: any, mapKey: string) => {
+      const id = playerIdOf(p, mapKey);
+      removeOnlinePlayer(id);
+      handlers.removePlayer?.(id);
+    });
   }
 
   async function join() {
@@ -200,9 +283,14 @@ export async function connectGame(
     room = await client.joinOrCreate("world", { token });
     reconnectAttempt = 0;
     handlers.onStatus("connected");
+    onlinePlayers = [];
+
+    wireStateCallbacks(room);
 
     room.onMessage("StateSnapshot", (msg: Extract<ServerMessage, { type: "StateSnapshot" }>) => {
       localPlayerId = msg.you?.playerId ?? localPlayerId;
+      lastInventoryJson = "";
+      lastEquipmentJson = "";
       hudState = {
         skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
         inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
@@ -212,14 +300,29 @@ export async function connectGame(
       };
       handlers.onSnapshot(msg);
       handlers.onEquipment?.(hudState.equipment, hudState.inventoryCapacity);
+
+      // Snapshot may arrive after onAdd — refresh local HUD from live schema
+      const players = (room?.state as any)?.players;
+      players?.forEach?.((p: any, key: string) => {
+        const id = playerIdOf(p, key);
+        if (id === localPlayerId || key === localPlayerId) {
+          applyLocalHudFields(p);
+        }
+        upsertOnlinePlayer(p, key);
+        handlers.reconcilePlayer(id, p.x, p.y);
+      });
     });
 
     room.onMessage("ActionResult", (msg: unknown) => {
       const parsed = parseActionResult(msg);
       if (parsed.ok && (parsed.action === "woodcutting_complete" || parsed.action === "item_drag")) {
         if (parsed.skill) applySkill(parsed.skill);
-        if (parsed.inventory) applyInventory(parsed.inventory);
+        if (parsed.inventory) {
+          lastInventoryJson = parsed.inventoryJson ?? lastInventoryJson;
+          applyInventory(parsed.inventory);
+        }
         if (typeof parsed.equipmentJson === "string") {
+          lastEquipmentJson = parsed.equipmentJson;
           applyEquipment(
             parseEquipmentJson(parsed.equipmentJson),
             typeof parsed.inventoryCapacity === "number" ? parsed.inventoryCapacity : undefined,
@@ -237,31 +340,6 @@ export async function connectGame(
     });
     room.onMessage("ChatError", (msg: Extract<ServerMessage, { type: "ChatError" }>) => {
       handlers.onChatError(msg.error);
-    });
-
-    room.onStateChange((state: any) => {
-      onlinePlayers = [];
-      state.players?.forEach((p: any, id: string) => {
-        const playerId = (typeof p.id === "string" && p.id) || id;
-        onlinePlayers.push({
-          id: playerId,
-          name: p.name,
-          x: p.x,
-          y: p.y,
-          action: p.action || null,
-          appearance: {
-            hairColor: p.hairColor,
-            skinColor: p.skinColor,
-            shirtColor: p.shirtColor,
-            pantsColor: p.pantsColor,
-          },
-        });
-        handlers.reconcilePlayer(playerId, p.x, p.y);
-
-        if (localPlayerId && (playerId === localPlayerId || id === localPlayerId)) {
-          applyHudFromPlayerState(p);
-        }
-      });
     });
 
     room.onLeave((code) => {

@@ -89,8 +89,18 @@ export class WorldRoom extends Room<WorldState> {
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
   private playerEquipment = new Map<string, EquipmentLoadout>();
+  /** Throttle DB writes for x/y — Colyseus still syncs every move tick. */
+  private lastPosPersistAt = new Map<string, number>();
   private chatLimiter = new ChatRateLimiter();
   private movement = new MovementController();
+
+  private persistPosition(playerId: string, x: number, y: number, force = false) {
+    const now = Date.now();
+    const last = this.lastPosPersistAt.get(playerId) ?? 0;
+    if (!force && now - last < 2000) return;
+    this.lastPosPersistAt.set(playerId, now);
+    enqueueDirtyPlayer(playerId, { x, y });
+  }
 
   private appearanceOf(ps: PlayerState) {
     return {
@@ -162,6 +172,8 @@ export class WorldRoom extends Room<WorldState> {
 
   onCreate() {
     this.setState(new WorldState());
+    // Broadcast position patches ~20 Hz (movement steps every 50ms)
+    this.setPatchRate(50);
 
     const tree = new ResourceState();
     tree.id = WOODCUTTING.NORMAL_TREE.resourceId;
@@ -273,6 +285,7 @@ export class WorldRoom extends Room<WorldState> {
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
     this.playerEquipment.delete(playerId);
+    this.lastPosPersistAt.delete(playerId);
     this.chatLimiter.clear(playerId);
   }
 
@@ -474,7 +487,7 @@ export class WorldRoom extends Room<WorldState> {
         if (!ps) return;
         ps.x = pos.x;
         ps.y = pos.y;
-        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
+        this.persistPosition(playerId, ps.x, ps.y);
       },
       (playerId, pos, pendingInteract) => {
         if (this.actions.has(playerId)) return;
@@ -482,7 +495,7 @@ export class WorldRoom extends Room<WorldState> {
         if (!ps) return;
         ps.x = pos.x;
         ps.y = pos.y;
-        enqueueDirtyPlayer(playerId, { x: ps.x, y: ps.y });
+        this.persistPosition(playerId, ps.x, ps.y, true);
         if (!pendingInteract) return;
         const client = this.findClientByPlayerId(playerId);
         this.tryStartSkill(client, playerId, ps, pendingInteract);

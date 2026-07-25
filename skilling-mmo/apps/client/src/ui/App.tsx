@@ -360,6 +360,7 @@ export function App() {
           },
           getPredictedPos: () => bridge.current?.getLocalPos() ?? { x: 160, y: 160 },
           reconcilePlayer: (id, x, y) => bridge.current?.reconcilePlayer(id, x, y),
+          removePlayer: (id) => bridge.current?.removePlayer(id),
         });
         if (cancelled) {
           c.leave();
