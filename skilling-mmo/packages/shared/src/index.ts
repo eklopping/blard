@@ -39,17 +39,37 @@ export type GeneralSkillId = (typeof GENERAL_SKILLS)[keyof typeof GENERAL_SKILLS
 
 export const SKILLS = {
   WOODCUTTING: "woodcutting",
+  FORAGING: "foraging",
+  TIMBERWORKING: "timberworking",
   FARMING: "farming",
+  MILLING: "milling",
+  BAKING: "baking",
   MINING: "mining",
+  GEMSTONE_HARVESTING: "gemstone_harvesting",
+  ORE_HARVESTING: "ore_harvesting",
 } as const;
 
 export type SkillId = (typeof SKILLS)[keyof typeof SKILLS] | GeneralSkillId;
 
+export const SKILL_IDS: SkillId[] = Object.values(SKILLS);
+
+export const SKILL_LABELS: Record<SkillId, string> = {
+  [SKILLS.WOODCUTTING]: "Woodcutting",
+  [SKILLS.FORAGING]: "Foraging",
+  [SKILLS.TIMBERWORKING]: "Timberworking",
+  [SKILLS.FARMING]: "Farming",
+  [SKILLS.MILLING]: "Milling",
+  [SKILLS.BAKING]: "Baking",
+  [SKILLS.MINING]: "Mining",
+  [SKILLS.GEMSTONE_HARVESTING]: "Gemstone Harvesting",
+  [SKILLS.ORE_HARVESTING]: "Ore Harvesting",
+};
+
 /** Starting profession skills (level 1 at character creation). */
 export const PROFESSION_STARTING_SKILLS: Record<ProfessionId, SkillId[]> = {
-  [PROFESSIONS.WOODSMAN]: [SKILLS.WOODCUTTING],
-  [PROFESSIONS.FARMER]: [SKILLS.FARMING],
-  [PROFESSIONS.MINER]: [SKILLS.MINING],
+  [PROFESSIONS.WOODSMAN]: [SKILLS.WOODCUTTING, SKILLS.FORAGING, SKILLS.TIMBERWORKING],
+  [PROFESSIONS.FARMER]: [SKILLS.FARMING, SKILLS.MILLING, SKILLS.BAKING],
+  [PROFESSIONS.MINER]: [SKILLS.MINING, SKILLS.GEMSTONE_HARVESTING, SKILLS.ORE_HARVESTING],
 };
 
 export {

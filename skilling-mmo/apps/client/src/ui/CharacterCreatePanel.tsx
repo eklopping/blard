@@ -4,6 +4,7 @@ import {
   PROFESSION_LABELS,
   PROFESSION_DESCRIPTIONS,
   PROFESSION_STARTING_SKILLS,
+  SKILL_LABELS,
   TRAIT_DEFS,
   STARTER_TRAIT_IDS,
   DEFAULT_APPEARANCE,
@@ -185,7 +186,10 @@ export function CharacterCreatePanel({
                   <strong>{PROFESSION_LABELS[p]}</strong>
                   <span className="profession-desc">{PROFESSION_DESCRIPTIONS[p]}</span>
                   <span className="profession-skills">
-                    Starts with: {PROFESSION_STARTING_SKILLS[p].join(", ") || "—"}
+                    Starts with:{" "}
+                    {PROFESSION_STARTING_SKILLS[p]
+                      .map((s) => SKILL_LABELS[s] ?? s)
+                      .join(", ") || "—"}
                   </span>
                 </button>
               ))}

@@ -13,7 +13,7 @@ import type {
   EquipmentLoadout,
   ItemLocation,
 } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS, CLASS_LABELS, CLASS_SKILLS, TRAIT_DEFS } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS, CLASS_LABELS, CLASS_SKILLS, SKILL_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
 import { InventoryPanel } from "./InventoryPanel";
 import { MarketPanel } from "./MarketPanel";
@@ -243,10 +243,13 @@ export function GameHud({
                 }
                 return linkedSkills
                   .slice()
-                  .sort((a, b) => a.skill.localeCompare(b.skill))
+                  .sort((a, b) => {
+                    const order = CLASS_SKILLS[selectedClass] as string[];
+                    return order.indexOf(a.skill) - order.indexOf(b.skill);
+                  })
                   .map((s) => (
                     <li key={s.skill} className="active-class">
-                      <span className="skill-name">{s.skill}</span>
+                      <span className="skill-name">{SKILL_LABELS[s.skill] ?? s.skill}</span>
                       <span className="skill-level">Lv {s.level}</span>
                       <span className="skill-xp">{s.xp} xp</span>
                     </li>

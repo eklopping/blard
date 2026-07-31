@@ -8,7 +8,17 @@ import { xpForLevel, levelFromXp } from "./xp.js";
 
 /** Keep in sync with PROFESSIONS / SKILLS in index.ts (avoid circular imports). */
 type ProfessionId = "woodsman" | "farmer" | "miner";
-type SkillId = "woodcutting" | "farming" | "mining" | (string & {});
+type SkillId =
+  | "woodcutting"
+  | "foraging"
+  | "timberworking"
+  | "farming"
+  | "milling"
+  | "baking"
+  | "mining"
+  | "gemstone_harvesting"
+  | "ore_harvesting"
+  | (string & {});
 
 /** When true, every character can select any class (testing). Turn off for quest-gated unlocks. */
 export const UNLOCK_ALL_CLASSES_FOR_TESTING = true;
@@ -35,9 +45,9 @@ export const CLASS_LABELS: Record<ClassId, string> = {
  * General / shared skills can appear under multiple classes.
  */
 export const CLASS_SKILLS: Record<ClassId, SkillId[]> = {
-  [CLASSES.WOODSMAN]: ["woodcutting"],
-  [CLASSES.FARMER]: ["farming"],
-  [CLASSES.MINER]: ["mining"],
+  [CLASSES.WOODSMAN]: ["woodcutting", "foraging", "timberworking"],
+  [CLASSES.FARMER]: ["farming", "milling", "baking"],
+  [CLASSES.MINER]: ["mining", "gemstone_harvesting", "ore_harvesting"],
 };
 
 /** Reverse map: skill → classes that receive XP when it levels. */

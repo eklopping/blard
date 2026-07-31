@@ -54,6 +54,7 @@ import {
   type ClassId,
   type ClassProgressState,
   type ProfessionId,
+  type SkillId,
   SYSTEM_CHAT_SENDER_ID,
 } from "@skilling-mmo/shared";
 import {
@@ -405,8 +406,12 @@ export class WorldRoom extends Room<WorldState> {
     for (const s of player.skills) {
       skills.set(s.skill, { level: s.level, xp: s.xp });
     }
-    for (const skill of [SKILLS.WOODCUTTING, SKILLS.MINING, SKILLS.FARMING]) {
-      if (!skills.has(skill)) skills.set(skill, { level: 1, xp: 0 });
+    let seededSkills = false;
+    for (const skill of Object.values(SKILLS)) {
+      if (!skills.has(skill)) {
+        skills.set(skill, { level: 1, xp: 0 });
+        seededSkills = true;
+      }
     }
     this.playerSkills.set(player.id, skills);
 
@@ -434,7 +439,11 @@ export class WorldRoom extends Room<WorldState> {
     }
 
     // Persist class catch-up / seed / active class if anything changed vs DB
-    enqueueDirtyPlayer(player.id, { classes, activeClassId: activeClass });
+    enqueueDirtyPlayer(player.id, {
+      classes,
+      activeClassId: activeClass,
+      ...(seededSkills ? { skills } : {}),
+    });
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
@@ -451,7 +460,7 @@ export class WorldRoom extends Room<WorldState> {
         playerId: player.id,
         inventory: this.visibleInventory(player.id),
         skills: [...skills.entries()].map(([skill, v]) => ({
-          skill: skill as typeof SKILLS.WOODCUTTING,
+          skill: skill as SkillId,
           level: v.level,
           xp: v.xp,
         })),
