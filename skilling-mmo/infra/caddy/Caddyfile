@@ -5,9 +5,11 @@
 # Prefer HTTP-01 (port 80) over TLS-ALPN-01 — ALPN often fails behind
 # cloud NATs, CDNs, or when something else terminates 443.
 # Certs persist in the caddy_data Docker volume.
+#
+# Do not put `email {$ACME_EMAIL}` here unless ACME_EMAIL is always non-empty —
+# an empty placeholder makes Caddy fail to start ("wrong argument count").
 
 {
-	email {$ACME_EMAIL}
 	# Force HTTP-01 challenge on :80 (requires inbound TCP 80 open to the world)
 	auto_https disable_tls_alpn_challenge
 }
