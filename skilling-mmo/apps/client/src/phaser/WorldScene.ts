@@ -81,6 +81,8 @@ export class WorldScene extends Phaser.Scene {
   private engagedResourceId: string | null = null;
   /** True while server reports an in-progress skill action. */
   private acting = false;
+  /** Gather started on server but local sprite still walking into range — hold chop VFX. */
+  private gatherVfxPending = false;
   /** Client-only cooldown end times (ms since epoch) per resource. */
   private cooldownUntil = new Map<string, number>();
   private repeatTimer?: ReturnType<typeof setTimeout>;
@@ -250,22 +252,29 @@ export class WorldScene extends Phaser.Scene {
     this.tickRemoteMotion(dt);
     this.tickWalkAnims(dt);
 
-    if (this.acting) return;
-    if (!this.localPlayer || !this.predictedTarget) return;
-
-    const prevX = this.localPlayer.x;
-    const { pos, arrived } = stepToward(
-      { x: this.localPlayer.x, y: this.localPlayer.y },
-      this.predictedTarget,
-      MOVE_SPEED_PX_PER_SEC,
-      dt,
-    );
-    this.localPlayer.setPosition(pos.x, pos.y);
-    this.noteMotion(this.localId!, prevX, pos.x, !arrived);
-    if (arrived) {
-      this.predictedTarget = undefined;
-      if (this.localId) this.setWalking(this.localId, false);
+    // Keep walking into gather range even after server already started the action
+    if (this.localPlayer && this.predictedTarget) {
+      const prevX = this.localPlayer.x;
+      const { pos, arrived } = stepToward(
+        { x: this.localPlayer.x, y: this.localPlayer.y },
+        this.predictedTarget,
+        MOVE_SPEED_PX_PER_SEC,
+        dt,
+      );
+      this.localPlayer.setPosition(pos.x, pos.y);
+      this.noteMotion(this.localId!, prevX, pos.x, !arrived);
+      if (arrived) {
+        this.predictedTarget = undefined;
+        if (this.localId) this.setWalking(this.localId, false);
+        if (this.gatherVfxPending) {
+          this.gatherVfxPending = false;
+          if (this.acting) this.startChopVfx();
+        }
+      }
+      return;
     }
+
+    if (this.acting) return;
   }
 
   /** Lerp other players toward latest server poses each frame. */
@@ -480,13 +489,24 @@ export class WorldScene extends Phaser.Scene {
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
 
       if (this.acting) {
-        if (dist > ARRIVE_EPSILON_PX) sprite.setPosition(x, y);
-        this.setWalking(id, false);
+        // Never hard-teleport across the map while chopping — walk the remainder
+        if (dist <= 40) {
+          sprite.setPosition(x, y);
+          this.predictedTarget = undefined;
+          this.setWalking(id, false);
+          if (this.gatherVfxPending) {
+            this.gatherVfxPending = false;
+            this.startChopVfx();
+          }
+        } else {
+          this.predictedTarget = { x, y };
+          this.setWalking(id, true);
+        }
         return;
       }
 
-      // Teleports / zone travel
-      if (dist > 128) {
+      // Hard snap only for real teleports (zone travel), not interact approach
+      if (dist > 320 && !this.predictedTarget) {
         sprite.setPosition(x, y);
         this.predictedTarget = undefined;
         this.setWalking(id, false);
@@ -494,9 +514,9 @@ export class WorldScene extends Phaser.Scene {
       }
 
       if (this.predictedTarget) {
+        // Soft-follow server if it got far ahead; never blink across the map
         if (dist > 256) {
-          sprite.setPosition(x, y);
-          this.predictedTarget = undefined;
+          this.predictedTarget = { x, y };
         }
         return;
       }
@@ -533,18 +553,37 @@ export class WorldScene extends Phaser.Scene {
   onActionResult(msg: ActionResultMsg) {
     if (msg.ok && msg.action === "gather") {
       this.acting = true;
-      this.predictedTarget = undefined;
-      // Server only starts gather in-range — snap local sprite so we don't chop mid-map
-      if (this.localPlayer && this.serverPos) {
-        this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+      const distToServer =
+        this.localPlayer && this.serverPos
+          ? Math.hypot(
+              this.localPlayer.x - this.serverPos.x,
+              this.localPlayer.y - this.serverPos.y,
+            )
+          : 0;
+
+      if (distToServer <= 40) {
+        // Already beside the resource — lock pose and chop
+        this.predictedTarget = undefined;
+        this.gatherVfxPending = false;
+        if (this.localPlayer && this.serverPos) {
+          this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+        }
+        if (this.localId) this.setWalking(this.localId, false);
+        this.startChopVfx();
+      } else {
+        // Server may already be in range (e.g. previous stand) — walk there, don't teleport
+        this.gatherVfxPending = true;
+        if (this.serverPos) {
+          this.predictedTarget = { x: this.serverPos.x, y: this.serverPos.y };
+        }
+        if (this.localId) this.setWalking(this.localId, true);
       }
-      if (this.localId) this.setWalking(this.localId, false);
-      this.startChopVfx();
       return;
     }
 
     if (msg.ok && msg.action === "gather_complete") {
       this.acting = false;
+      this.gatherVfxPending = false;
       this.stopChopVfx(true, msg.resourceId);
       const resourceId = msg.resourceId ?? this.engagedResourceId;
       if (resourceId) {
@@ -559,6 +598,7 @@ export class WorldScene extends Phaser.Scene {
     if (msg.ok && msg.action === "travel") {
       this.cancelEngagement();
       this.predictedTarget = undefined;
+      this.gatherVfxPending = false;
       this.acting = false;
       this.stopChopVfx(false);
       if (msg.zone && typeof msg.x === "number" && typeof msg.y === "number") {
@@ -572,12 +612,14 @@ export class WorldScene extends Phaser.Scene {
 
     if (msg.ok && msg.action === "cancel") {
       this.acting = false;
+      this.gatherVfxPending = false;
       this.stopChopVfx(false);
       return;
     }
 
     if (!msg.ok) {
       this.acting = false;
+      this.gatherVfxPending = false;
       this.stopChopVfx(false);
     }
   }
@@ -621,6 +663,7 @@ export class WorldScene extends Phaser.Scene {
   private cancelEngagement() {
     this.engagedResourceId = null;
     this.acting = false;
+    this.gatherVfxPending = false;
     this.clearRepeatTimer();
     this.stopChopVfx(false);
   }
