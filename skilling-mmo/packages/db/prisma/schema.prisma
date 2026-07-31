@@ -34,6 +34,8 @@ model Player {
   coins      Int        @default(100)
   /// Equipped gear JSON: { back?: {itemId,quantity}, primary?: … }
   equipmentJson String  @default("{}")
+  /// Currently selected class id (woodsman | farmer | miner)
+  activeClassId String  @default("woodsman")
   x          Float      @default(160)
   y          Float      @default(160)
   createdAt  DateTime   @default(now())

@@ -96,6 +96,42 @@ body,
   font-size: 0.95rem;
 }
 
+.hud-class-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.hud-class-picker-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.hud-class-picker select {
+  appearance: none;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.hud-class-picker select:hover,
+.hud-class-picker select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.hud-skills-list li.active-class {
+  color: var(--accent);
+}
+
 .hud-coins {
   color: var(--accent);
   font-size: 0.75rem;

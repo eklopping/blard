@@ -42,6 +42,7 @@ import {
   classesToDto,
   serializeClasses,
   starterClassForProfession,
+  UNLOCK_ALL_CLASSES_FOR_TESTING,
   type ClientMessage,
   type ChatMessageDto,
   type EquipmentLoadout,
@@ -90,6 +91,8 @@ class PlayerState extends Schema {
   @type("string") equipmentJson: string = "{}";
   /** JSON array of ClassProgressDto for live HUD */
   @type("string") classesJson: string = "[]";
+  /** Currently selected class id */
+  @type("string") activeClass: string = "";
 }
 
 class ResourceState extends Schema {
@@ -130,6 +133,7 @@ export class WorldRoom extends Room<WorldState> {
   ];
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
   private playerClasses = new Map<string, Map<ClassId, ClassProgressState>>();
+  private playerActiveClass = new Map<string, ClassId>();
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
@@ -221,6 +225,15 @@ export class WorldRoom extends Room<WorldState> {
       unlockClassWithCatchUp(classes, skills, starter);
     }
 
+    // Testing: unlock every class so the HUD dropdown can switch freely
+    if (UNLOCK_ALL_CLASSES_FOR_TESTING) {
+      for (const classId of CLASS_IDS) {
+        if (!classes.get(classId)!.unlocked) {
+          unlockClassWithCatchUp(classes, skills, classId);
+        }
+      }
+    }
+
     // One-time catch-up for unlocked classes still at 0 XP with leveled skills
     for (const classId of CLASS_IDS) {
       const row = classes.get(classId)!;
@@ -237,6 +250,20 @@ export class WorldRoom extends Room<WorldState> {
     return classes;
   }
 
+  private resolveActiveClass(
+    stored: string | null | undefined,
+    profession: ProfessionId,
+    classes: Map<ClassId, ClassProgressState>,
+  ): ClassId {
+    if (stored && isClassId(stored) && classes.get(stored)?.unlocked) {
+      return stored;
+    }
+    const starter = starterClassForProfession(profession);
+    if (classes.get(starter)?.unlocked) return starter;
+    const firstUnlocked = CLASS_IDS.find((id) => classes.get(id)?.unlocked);
+    return firstUnlocked ?? starter;
+  }
+
   /** Unlock a class and apply shared-skill catch-up XP (for future unlock flows). */
   unlockPlayerClass(playerId: string, classId: ClassId): boolean {
     const classes = this.playerClasses.get(playerId);
@@ -248,6 +275,16 @@ export class WorldRoom extends Room<WorldState> {
     const ps = this.state.players.get(playerId);
     this.syncHudState(playerId, ps);
     enqueueDirtyPlayer(playerId, { classes });
+    return true;
+  }
+
+  private setActiveClass(playerId: string, classId: ClassId): boolean {
+    const classes = this.playerClasses.get(playerId);
+    if (!classes?.get(classId)?.unlocked) return false;
+    this.playerActiveClass.set(playerId, classId);
+    const ps = this.state.players.get(playerId);
+    this.syncHudState(playerId, ps);
+    enqueueDirtyPlayer(playerId, { activeClassId: classId });
     return true;
   }
 
@@ -272,6 +309,7 @@ export class WorldRoom extends Room<WorldState> {
     player.inventoryJson = JSON.stringify(this.visibleInventory(playerId));
     const classes = this.playerClasses.get(playerId);
     player.classesJson = classes ? serializeClasses(classes) : "[]";
+    player.activeClass = this.playerActiveClass.get(playerId) ?? "";
   }
 
   private snapshotPlayers() {
@@ -373,6 +411,12 @@ export class WorldRoom extends Room<WorldState> {
     const profession = player.profession.toLowerCase() as ProfessionId;
     const classes = this.loadOrSeedClasses(player.id, player.classes, profession, skills);
     this.playerClasses.set(player.id, classes);
+    const activeClass = this.resolveActiveClass(
+      player.activeClassId,
+      profession,
+      classes,
+    );
+    this.playerActiveClass.set(player.id, activeClass);
 
     this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
@@ -387,8 +431,8 @@ export class WorldRoom extends Room<WorldState> {
       enqueueDirtyPlayer(player.id, { x: ps.x, y: ps.y });
     }
 
-    // Persist class catch-up / seed if anything changed vs DB
-    enqueueDirtyPlayer(player.id, { classes });
+    // Persist class catch-up / seed / active class if anything changed vs DB
+    enqueueDirtyPlayer(player.id, { classes, activeClassId: activeClass });
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
@@ -410,6 +454,7 @@ export class WorldRoom extends Room<WorldState> {
           xp: v.xp,
         })),
         classes: classesToDto(classes),
+        activeClass,
         coins: player.coins,
         profession,
         traits: player.traits,
@@ -448,6 +493,7 @@ export class WorldRoom extends Room<WorldState> {
         inventory: this.playerInventory.get(playerId),
         skills: this.playerSkills.get(playerId),
         classes: this.playerClasses.get(playerId),
+        activeClassId: this.playerActiveClass.get(playerId),
         equipmentJson: serializeEquipment(this.playerEquipment.get(playerId) ?? {}),
       });
       // Remove from live state first so other clients drop the sprite immediately
@@ -456,6 +502,7 @@ export class WorldRoom extends Room<WorldState> {
     }
     this.playerSkills.delete(playerId);
     this.playerClasses.delete(playerId);
+    this.playerActiveClass.delete(playerId);
     this.playerInventory.delete(playerId);
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
@@ -529,7 +576,33 @@ export class WorldRoom extends Room<WorldState> {
 
     if (msg.type === "ItemDrag") {
       this.handleItemDrag(client, playerId, ps, msg.from, msg.to);
+      return;
     }
+
+    if (msg.type === "SetActiveClass") {
+      this.handleSetActiveClass(client, playerId, msg.classId);
+    }
+  }
+
+  private handleSetActiveClass(client: Client, playerId: string, classId: string) {
+    if (!isClassId(classId)) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        reason: "unknown_class",
+        action: "set_active_class",
+      });
+      return;
+    }
+    const ok = this.setActiveClass(playerId, classId);
+    client.send("ActionResult", {
+      type: "ActionResult",
+      ok,
+      action: "set_active_class",
+      reason: ok ? undefined : "class_locked",
+      activeClass: ok ? classId : undefined,
+      classesJson: serializeClasses(this.playerClasses.get(playerId) ?? new Map()),
+    });
   }
 
   private handleItemDrag(

@@ -3,6 +3,7 @@ import type {
   InventorySlotDto,
   SkillProgressDto,
   ClassProgressDto,
+  ClassId,
   Appearance,
   ProfessionId,
   TraitId,
@@ -32,6 +33,8 @@ export function GameHud({
   status,
   skills,
   classes,
+  activeClass,
+  onSetActiveClass,
   panel,
   onPanel,
   inventory,
@@ -69,6 +72,8 @@ export function GameHud({
   status: string;
   skills: SkillProgressDto[];
   classes: ClassProgressDto[];
+  activeClass: ClassId | "";
+  onSetActiveClass: (classId: ClassId) => void;
   panel: HudPanel;
   onPanel: (p: HudPanel) => void;
   inventory: InventorySlotDto[];
@@ -98,6 +103,11 @@ export function GameHud({
   onBankOpen: (open: boolean) => void;
 }) {
   const [equipOpen, setEquipOpen] = useState(false);
+  const unlockedClasses = classes.filter((c) => c.unlocked);
+  const selectedClass =
+    (activeClass && unlockedClasses.some((c) => c.classId === activeClass)
+      ? activeClass
+      : unlockedClasses[0]?.classId) ?? "";
   const traitName =
     traits[0] && TRAIT_DEFS[traits[0]] ? TRAIT_DEFS[traits[0]].name : null;
 
@@ -124,7 +134,27 @@ export function GameHud({
           <PixelAvatarPreview appearance={appearance} scale={3} />
           <div className="hud-account-text">
             <strong>{displayName}</strong>
-            <span className="muted">{PROFESSION_LABELS[profession]}</span>
+            {unlockedClasses.length > 0 ? (
+              <label className="hud-class-picker">
+                <span className="hud-class-picker-label">Class</span>
+                <select
+                  value={selectedClass}
+                  onChange={(e) => {
+                    const next = e.target.value as ClassId;
+                    if (next && next !== selectedClass) onSetActiveClass(next);
+                  }}
+                  aria-label="Active class"
+                >
+                  {unlockedClasses.map((c) => (
+                    <option key={c.classId} value={c.classId}>
+                      {CLASS_LABELS[c.classId]} · Lv {c.level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span className="muted">{PROFESSION_LABELS[profession]}</span>
+            )}
             {traitName && <span className="muted">{traitName}</span>}
             <span className="muted">@{username}</span>
             <span className="hud-coins">{coins}c · {status}</span>
@@ -183,7 +213,7 @@ export function GameHud({
                 .slice()
                 .sort((a, b) => a.classId.localeCompare(b.classId))
                 .map((c) => (
-                  <li key={c.classId}>
+                  <li key={c.classId} className={c.classId === selectedClass ? "active-class" : ""}>
                     <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
                     <span className="skill-level">Lv {c.level}</span>
                     <span className="skill-xp">{c.xp} xp</span>

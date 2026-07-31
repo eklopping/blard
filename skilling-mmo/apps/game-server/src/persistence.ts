@@ -5,6 +5,7 @@ interface DirtyPayload {
   y?: number;
   coins?: number;
   equipmentJson?: string;
+  activeClassId?: string;
   inventory?: { slot: number; itemId: string | null; quantity: number }[];
   skills?: Map<string, { level: number; xp: number }>;
   classes?: Map<string, { level: number; xp: number; unlocked: boolean }>;
@@ -28,6 +29,7 @@ export function enqueueDirtyPlayer(playerId: string, patch: DirtyPayload) {
     classes: patch.classes ?? cur.classes,
     ledger: patch.ledger ?? cur.ledger,
     equipmentJson: patch.equipmentJson ?? cur.equipmentJson,
+    activeClassId: patch.activeClassId ?? cur.activeClassId,
   });
 }
 
@@ -39,7 +41,7 @@ export async function flushDirtyPlayers() {
   for (const [playerId, data] of entries) {
     try {
       await prisma.$transaction(async (tx) => {
-        if (data.x != null || data.y != null || data.coins != null || data.equipmentJson != null) {
+        if (data.x != null || data.y != null || data.coins != null || data.equipmentJson != null || data.activeClassId != null) {
           await tx.player.update({
             where: { id: playerId },
             data: {
@@ -47,6 +49,7 @@ export async function flushDirtyPlayers() {
               ...(data.y != null ? { y: data.y } : {}),
               ...(data.coins != null ? { coins: data.coins } : {}),
               ...(data.equipmentJson != null ? { equipmentJson: data.equipmentJson } : {}),
+              ...(data.activeClassId != null ? { activeClassId: data.activeClassId } : {}),
             },
           });
         }

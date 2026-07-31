@@ -10,6 +10,9 @@ import { xpForLevel, levelFromXp } from "./xp.js";
 type ProfessionId = "woodsman" | "farmer" | "miner";
 type SkillId = "woodcutting" | "farming" | "mining" | (string & {});
 
+/** When true, every character can select any class (testing). Turn off for quest-gated unlocks. */
+export const UNLOCK_ALL_CLASSES_FOR_TESTING = true;
+
 /** Classes currently match starter professions; expand independently later. */
 export const CLASSES = {
   WOODSMAN: "woodsman",

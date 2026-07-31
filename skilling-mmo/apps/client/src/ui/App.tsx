@@ -12,6 +12,7 @@ import type {
   InventorySlotDto,
   SkillProgressDto,
   ClassProgressDto,
+  ClassId,
   CharacterAuthResponse,
   ChatMessageDto,
   ChatInboxThreadDto,
@@ -53,6 +54,7 @@ export function App() {
   const [equipment, setEquipment] = useState<EquipmentLoadout>({});
   const [skills, setSkills] = useState<SkillProgressDto[]>([]);
   const [classes, setClasses] = useState<ClassProgressDto[]>([]);
+  const [activeClass, setActiveClass] = useState<ClassId | "">("");
   const [coins, setCoins] = useState(0);
   const [status, setStatus] = useState("idle");
   const [bank, setBank] = useState<InventorySlotDto[]>([]);
@@ -298,6 +300,9 @@ export function App() {
       if (cancelled) return;
       setClasses(next.map((c) => ({ ...c })));
     };
+    const onActiveClass = (classId: ClassId) => {
+      if (!cancelled) setActiveClass(classId);
+    };
 
     (async () => {
       setStatus("connecting…");
@@ -308,6 +313,7 @@ export function App() {
             setInventory((snap.you.inventory ?? []).map((s) => ({ ...s })));
             setSkills((snap.you.skills ?? []).map((s) => ({ ...s })));
             setClasses((snap.you.classes ?? []).map((c) => ({ ...c })));
+            if (snap.you.activeClass) setActiveClass(snap.you.activeClass);
             setCoins(snap.you.coins);
             if (snap.you.equipment) setEquipment(snap.you.equipment);
             if (typeof snap.you.inventoryCapacity === "number") {
@@ -319,6 +325,7 @@ export function App() {
           onInventory,
           onSkill,
           onClasses,
+          onActiveClass,
           onCoins: (coins) => {
             if (!cancelled) setCoins(coins);
           },
@@ -410,6 +417,7 @@ export function App() {
         setInventory(hud.inventory.map((s) => ({ ...s })));
         setSkills(hud.skills.map((s) => ({ ...s })));
         setClasses(hud.classes.map((c) => ({ ...c })));
+        if (hud.activeClass) setActiveClass(hud.activeClass);
         setCoins(hud.coins);
         void loadMutes();
         void loadPublic();
@@ -523,6 +531,7 @@ export function App() {
         }
         return next.map((c) => ({ ...c }));
       });
+      setActiveClass((prev) => (hud.activeClass && hud.activeClass !== prev ? hud.activeClass : prev));
       setInventory((prev) => {
         const next = hud.inventory;
         if (
@@ -602,6 +611,11 @@ export function App() {
             status={status}
             skills={skills}
             classes={classes}
+            activeClass={activeClass}
+            onSetActiveClass={(classId) => {
+              setActiveClass(classId);
+              conn.current?.sendIntent({ type: "SetActiveClass", classId });
+            }}
             panel={panel}
             onPanel={setPanel}
             inventory={inventory}

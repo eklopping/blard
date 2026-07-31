@@ -3,7 +3,7 @@
 import type { TraitId } from "./traits.js";
 import type { Appearance } from "./avatar.js";
 import type { ZoneId, NpcKind, OpenPanelKind } from "./zones.js";
-import type { ClassProgressDto } from "./classes.js";
+import type { ClassProgressDto, ClassId } from "./classes.js";
 
 export const TICK_MS = 600;
 
@@ -116,6 +116,7 @@ export {
   CLASS_LABELS,
   CLASS_SKILLS,
   CLASS_LEVEL_BOONS,
+  UNLOCK_ALL_CLASSES_FOR_TESTING,
   classesForSkill,
   classXpForSkillLevel,
   classXpFromSkillLevels,
@@ -468,7 +469,8 @@ export type ClientMessage =
   | { type: "CancelAction" }
   | { type: "ChatPublic"; body: string }
   | { type: "ChatDm"; recipientId: string; body: string }
-  | { type: "ItemDrag"; from: ItemLocation; to: ItemLocation };
+  | { type: "ItemDrag"; from: ItemLocation; to: ItemLocation }
+  | { type: "SetActiveClass"; classId: ClassId };
 
 /** Server → client events */
 export type ServerMessage =
@@ -501,6 +503,8 @@ export type ServerMessage =
       skill?: SkillProgressDto;
       /** Flat JSON array of ClassProgressDto — preferred for multi-class sync */
       classesJson?: string;
+      /** Currently selected class after SetActiveClass */
+      activeClass?: ClassId;
       inventory?: InventorySlotDto[];
     }
   | { type: "OpenPanel"; panel: OpenPanelKind }
@@ -542,6 +546,8 @@ export interface SelfSnapshot {
   inventory: InventorySlotDto[];
   skills: SkillProgressDto[];
   classes?: ClassProgressDto[];
+  /** Currently selected class (must be unlocked) */
+  activeClass?: ClassId;
   coins: number;
   profession?: ProfessionId;
   traits?: TraitId[];

@@ -16,6 +16,8 @@ import {
   parseEquipmentJson,
   parseClassesJson,
   isZoneId,
+  isClassId,
+  type ClassId,
 } from "@skilling-mmo/shared";
 import type { ZoneId } from "@skilling-mmo/shared";
 
@@ -41,6 +43,7 @@ function resolveEndpoint(): string {
 export interface HudLiveState {
   skills: SkillProgressDto[];
   classes: ClassProgressDto[];
+  activeClass: ClassId | "";
   inventory: InventorySlotDto[];
   coins: number;
   inventoryCapacity: number;
@@ -59,6 +62,7 @@ export interface ConnectHandlers {
   onInventory: (slots: InventorySlotDto[]) => void;
   onSkill: (s: SkillProgressDto) => void;
   onClasses?: (classes: ClassProgressDto[]) => void;
+  onActiveClass?: (classId: ClassId) => void;
   onCoins?: (coins: number) => void;
   onEquipment?: (equipment: EquipmentLoadout, capacity: number) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
@@ -131,6 +135,8 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
     y: typeof m.y === "number" ? m.y : undefined,
     skill,
     classesJson: typeof m.classesJson === "string" ? m.classesJson : undefined,
+    activeClass:
+      typeof m.activeClass === "string" && isClassId(m.activeClass) ? m.activeClass : undefined,
     inventory: inventory ?? undefined,
   };
 }
@@ -155,6 +161,7 @@ export async function connectGame(
   let hudState: HudLiveState = {
     skills: [],
     classes: [],
+    activeClass: "",
     inventory: [],
     coins: 0,
     inventoryCapacity: INVENTORY_BASE_SLOTS,
@@ -181,6 +188,13 @@ export async function connectGame(
     if (rawJson != null) lastClassesJson = rawJson;
     hudState = { ...hudState, classes: classes.map((c) => ({ ...c })) };
     handlers.onClasses?.(hudState.classes);
+  }
+
+  function applyActiveClass(classId: string) {
+    if (!isClassId(classId)) return;
+    if (hudState.activeClass === classId) return;
+    hudState = { ...hudState, activeClass: classId };
+    handlers.onActiveClass?.(classId);
   }
 
   function applyInventory(slots: InventorySlotDto[]) {
@@ -251,6 +265,9 @@ export async function connectGame(
       const parsed = parseClassesJson(p.classesJson);
       if (parsed) applyClasses(parsed, p.classesJson);
     }
+    if (typeof p.activeClass === "string" && p.activeClass) {
+      applyActiveClass(p.activeClass);
+    }
   }
 
   function upsertOnlinePlayer(p: any, mapKey: string) {
@@ -317,6 +334,7 @@ export async function connectGame(
     p.listen("equipmentJson", () => maybeHud());
     p.listen("inventoryCapacity", () => maybeHud());
     p.listen("classesJson", () => maybeHud());
+    p.listen("activeClass", () => maybeHud());
   }
 
   function wireStateCallbacks(r: Room) {
@@ -351,6 +369,8 @@ export async function connectGame(
       hudState = {
         skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
         classes: (msg.you?.classes ?? []).map((c) => ({ ...c })),
+        activeClass:
+          msg.you?.activeClass && isClassId(msg.you.activeClass) ? msg.you.activeClass : "",
         inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
         coins: msg.you?.coins ?? 0,
         inventoryCapacity: msg.you?.inventoryCapacity ?? INVENTORY_BASE_SLOTS,
@@ -360,6 +380,7 @@ export async function connectGame(
       handlers.onSnapshot(msg);
       handlers.onEquipment?.(hudState.equipment, hudState.inventoryCapacity);
       if (hudState.classes.length) handlers.onClasses?.(hudState.classes);
+      if (hudState.activeClass) handlers.onActiveClass?.(hudState.activeClass);
 
       // Snapshot may arrive after onAdd — refresh local HUD from live schema
       const players = (room?.state as any)?.players;
@@ -382,6 +403,7 @@ export async function connectGame(
         "shop_buy",
         "shop_sell",
         "sync_inventory",
+        "set_active_class",
       ]);
       if (parsed.ok && parsed.action && syncHudActions.has(parsed.action)) {
         if (parsed.skill) applySkill(parsed.skill);
@@ -389,6 +411,7 @@ export async function connectGame(
           const parsedClasses = parseClassesJson(parsed.classesJson);
           if (parsedClasses) applyClasses(parsedClasses, parsed.classesJson);
         }
+        if (parsed.activeClass) applyActiveClass(parsed.activeClass);
         if (parsed.inventory) {
           lastInventoryJson = parsed.inventoryJson ?? lastInventoryJson;
           applyInventory(parsed.inventory);

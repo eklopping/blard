@@ -12,6 +12,7 @@ import {
   professionStarterBagItems,
   CLASS_IDS,
   starterClassForProfession,
+  UNLOCK_ALL_CLASSES_FOR_TESTING,
   type ProfessionId,
   type SkillId,
   type TraitId,
@@ -107,6 +108,7 @@ async function createPlayerForAccount(
       sortOrder: existingCount,
       coins: 100,
       equipmentJson: "{}",
+      activeClassId: starterClass,
       x: TOWN_SPAWN.x,
       y: TOWN_SPAWN.y,
       skills: {
@@ -117,7 +119,8 @@ async function createPlayerForAccount(
           classId,
           level: 1,
           xp: 0,
-          unlocked: classId === starterClass,
+          // Testing: unlock all; otherwise only the starter profession class
+          unlocked: UNLOCK_ALL_CLASSES_FOR_TESTING || classId === starterClass,
         })),
       },
       inventory: {
