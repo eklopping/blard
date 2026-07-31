@@ -19,7 +19,7 @@ ARG VITE_WS_URL=
 ENV VITE_API_URL=$VITE_API_URL VITE_WS_URL=$VITE_WS_URL
 RUN npm run build -w @skilling-mmo/shared && npm run build -w @skilling-mmo/client
 
-FROM caddy:2-alpine AS runner
+FROM caddy:2.10-alpine AS runner
 COPY --from=build /app/apps/client/dist /srv
 COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
 EXPOSE 80 443

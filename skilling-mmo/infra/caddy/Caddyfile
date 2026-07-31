@@ -10,8 +10,10 @@
 # an empty placeholder makes Caddy fail to start ("wrong argument count").
 
 {
-	# Force HTTP-01 challenge on :80 (requires inbound TCP 80 open to the world)
-	auto_https disable_tls_alpn_challenge
+	# Force HTTP-01 on :80 (compatible with Caddy 2.x ACME issuer syntax)
+	cert_issuer acme {
+		disable_tlsalpn_challenge
+	}
 }
 
 {$DOMAIN:localhost} {
