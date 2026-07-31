@@ -128,7 +128,7 @@ export function GameHud({
   return (
     <>
       <aside className="game-hud">
-        <div className="hud-brand">Skilling MMO</div>
+        <div className="hud-brand">Ars Perita</div>
 
         <div className="hud-account">
           <PixelAvatarPreview appearance={appearance} scale={3} />
@@ -206,29 +206,24 @@ export function GameHud({
         </div>
 
         <div className="hud-section hud-skills-section">
-          <h2>Classes</h2>
+          <h2>Class</h2>
           <ul className="hud-skills-list">
-            {unlockedClasses.length === 0 ? (
-              <li className="muted">No classes unlocked</li>
+            {!selectedClass ? (
+              <li className="muted">No class equipped</li>
             ) : (
-              unlockedClasses
-                .slice()
-                .sort((a, b) => a.classId.localeCompare(b.classId))
-                .map((c) => (
-                  <li key={c.classId} className={c.classId === selectedClass ? "active-class" : ""}>
-                    <button
-                      type="button"
-                      className="hud-class-row"
-                      onClick={() => {
-                        if (c.classId !== selectedClass) onSetActiveClass(c.classId);
-                      }}
-                    >
-                      <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
-                      <span className="skill-level">Lv {c.level}</span>
-                      <span className="skill-xp">{c.xp} xp</span>
-                    </button>
+              (() => {
+                const c =
+                  unlockedClasses.find((x) => x.classId === selectedClass) ??
+                  classes.find((x) => x.classId === selectedClass);
+                if (!c) return <li className="muted">No class equipped</li>;
+                return (
+                  <li key={c.classId} className="active-class">
+                    <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
+                    <span className="skill-level">Lv {c.level}</span>
+                    <span className="skill-xp">{c.xp} xp</span>
                   </li>
-                ))
+                );
+              })()
             )}
           </ul>
         </div>
@@ -236,24 +231,27 @@ export function GameHud({
         <div className="hud-section hud-skills-section">
           <h2>Skills</h2>
           <ul className="hud-skills-list">
-            {skills.length === 0 ? (
-              <li className="muted">No skills yet</li>
+            {!selectedClass ? (
+              <li className="muted">Equip a class to see skills</li>
             ) : (
-              skills
-                .slice()
-                .sort((a, b) => a.skill.localeCompare(b.skill))
-                .map((s) => {
-                  const linked =
-                    !!selectedClass &&
-                    (CLASS_SKILLS[selectedClass] as string[]).includes(s.skill);
-                  return (
-                    <li key={s.skill} className={linked ? "active-class" : ""}>
+              (() => {
+                const linkedSkills = skills.filter((s) =>
+                  (CLASS_SKILLS[selectedClass] as string[]).includes(s.skill),
+                );
+                if (linkedSkills.length === 0) {
+                  return <li className="muted">No skills for this class yet</li>;
+                }
+                return linkedSkills
+                  .slice()
+                  .sort((a, b) => a.skill.localeCompare(b.skill))
+                  .map((s) => (
+                    <li key={s.skill} className="active-class">
                       <span className="skill-name">{s.skill}</span>
                       <span className="skill-level">Lv {s.level}</span>
                       <span className="skill-xp">{s.xp} xp</span>
                     </li>
-                  );
-                })
+                  ));
+              })()
             )}
           </ul>
         </div>

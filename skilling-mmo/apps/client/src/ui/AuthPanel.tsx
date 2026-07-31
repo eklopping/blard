@@ -38,7 +38,7 @@ export function AuthPanel({
     <LobbyShell>
       <div className="lobby-card auth-card">
         <div className="lobby-brand">
-          <h1>Skilling MMO</h1>
+          <h1>Ars Perita</h1>
           <p className="tagline">Choose your path. Master your trade.</p>
         </div>
 
