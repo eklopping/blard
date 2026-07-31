@@ -132,6 +132,21 @@ body,
   color: var(--accent);
 }
 
+.hud-skills-list li.hud-class-entry {
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  padding: 0.35rem 0;
+}
+
+.class-level {
+  color: #f2d36b;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  text-shadow: 0 0 10px rgba(242, 211, 107, 0.35);
+}
+
 .hud-class-row {
   display: flex;
   width: 100%;

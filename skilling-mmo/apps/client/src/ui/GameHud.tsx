@@ -145,14 +145,11 @@ export function GameHud({
                   }}
                   aria-label="Active class"
                 >
-                  {unlockedClasses.map((c) => {
-                    const skillNames = CLASS_SKILLS[c.classId].join(", ");
-                    return (
-                      <option key={c.classId} value={c.classId}>
-                        {CLASS_LABELS[c.classId]} · Lv {c.level} ({skillNames})
-                      </option>
-                    );
-                  })}
+                  {unlockedClasses.map((c) => (
+                    <option key={c.classId} value={c.classId}>
+                      {CLASS_LABELS[c.classId]} · Lv {c.level}
+                    </option>
+                  ))}
                 </select>
               </label>
             ) : (
@@ -217,10 +214,9 @@ export function GameHud({
                   classes.find((x) => x.classId === selectedClass);
                 if (!c) return <li className="muted">No class equipped</li>;
                 return (
-                  <li key={c.classId} className="active-class">
+                  <li key={c.classId} className="hud-class-entry">
                     <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
-                    <span className="skill-level">Lv {c.level}</span>
-                    <span className="skill-xp">{c.xp} xp</span>
+                    <span className="class-level">Lv {c.level}</span>
                   </li>
                 );
               })()
