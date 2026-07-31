@@ -9,9 +9,6 @@ import { prisma, LedgerType, ChatChannel } from "@skilling-mmo/db";
 import {
   TICK_MS,
   MOVE_TICK_MS,
-  WOODCUTTING,
-  MINING,
-  FARMING,
   SKILLS,
   INVENTORY_SIZE,
   maxStackFor,
@@ -58,9 +55,7 @@ import {
   SYSTEM_CHAT_SENDER_ID,
 } from "@skilling-mmo/shared";
 import {
-  WoodcuttingHandler,
-  MiningHandler,
-  FarmingHandler,
+  createGatherHandlers,
   type SkillContext,
   type SkillHandler,
 } from "../skills/SkillHandler.js";
@@ -129,11 +124,7 @@ export class WorldRoom extends Room<WorldState> {
   private tickTimer?: ReturnType<typeof setInterval>;
   private moveTimer?: ReturnType<typeof setInterval>;
   private actions = new Map<string, ActiveAction>();
-  private skillHandlers: SkillHandler[] = [
-    new WoodcuttingHandler(),
-    new MiningHandler(),
-    new FarmingHandler(),
-  ];
+  private skillHandlers: SkillHandler[] = createGatherHandlers();
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
   private playerClasses = new Map<string, Map<ClassId, ClassProgressState>>();
   private playerActiveClass = new Map<string, ClassId>();
@@ -182,10 +173,8 @@ export class WorldRoom extends Room<WorldState> {
   }
 
   private interactRangeFor(resourceId: string): number {
-    if (resourceId === WOODCUTTING.NORMAL_TREE.resourceId) return WOODCUTTING.NORMAL_TREE.interactRange;
-    if (resourceId === MINING.STONE.resourceId) return MINING.STONE.interactRange;
-    if (resourceId === FARMING.WHEAT.resourceId) return FARMING.WHEAT.interactRange;
-    return 48;
+    const handler = this.skillHandlers.find((h) => h.canHandle(resourceId));
+    return handler?.interactRange() ?? 48;
   }
 
   /** Visible bag slots only (capacity-bounded). */
@@ -1377,7 +1366,9 @@ export class WorldRoom extends Room<WorldState> {
         applySkillLevelUpsToClasses(classes, result.skill, oldLevel, newLevel);
       }
 
-      this.addItem(playerId, result.itemId, result.itemQty);
+      if (result.itemId && result.itemQty > 0) {
+        this.addItem(playerId, result.itemId, result.itemQty);
+      }
       this.syncHudState(playerId, ps);
 
       const skillUpdate = {
@@ -1409,7 +1400,7 @@ export class WorldRoom extends Room<WorldState> {
         classes,
         ledger: {
           type: LedgerType.SKILL_REWARD,
-          itemId: result.itemId,
+          itemId: result.itemId || undefined,
           deltaQty: result.itemQty,
           meta: { skill: result.skill, xp: result.xp },
         },

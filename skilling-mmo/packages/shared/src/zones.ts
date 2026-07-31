@@ -126,8 +126,12 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    // Beside the spawn — short walk to stand next to the tree
-    resources: [{ id: "tree_normal", kind: "tree", x: 400, y: CY + 20 }],
+    // Beside the spawn — one action node per Woodsman skill
+    resources: [
+      { id: "tree_normal", kind: "tree", x: 400, y: CY + 20 },
+      { id: "forage_bush", kind: "bush", x: 400, y: CY - 80 },
+      { id: "timber_bench", kind: "bench", x: 480, y: CY + 20 },
+    ],
   },
   [ZONES.MINES]: {
     id: ZONES.MINES,
@@ -146,7 +150,12 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "stone_chunk", kind: "rock", x: CX + 80, y: WORLD_HEIGHT_PX - 200 }],
+    // One action node per Miner skill
+    resources: [
+      { id: "stone_chunk", kind: "rock", x: CX + 80, y: WORLD_HEIGHT_PX - 200 },
+      { id: "gem_vein", kind: "gem", x: CX - 80, y: WORLD_HEIGHT_PX - 200 },
+      { id: "ore_vein", kind: "ore", x: CX + 160, y: WORLD_HEIGHT_PX - 200 },
+    ],
   },
   [ZONES.FARM]: {
     id: ZONES.FARM,
@@ -165,7 +174,12 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "wheat_plot", kind: "crop", x: WORLD_WIDTH_PX - 400, y: CY + 20 }],
+    // One action node per Farmer skill
+    resources: [
+      { id: "wheat_plot", kind: "crop", x: WORLD_WIDTH_PX - 400, y: CY + 20 },
+      { id: "mill_stone", kind: "mill", x: WORLD_WIDTH_PX - 400, y: CY - 80 },
+      { id: "bake_oven", kind: "oven", x: WORLD_WIDTH_PX - 480, y: CY + 20 },
+    ],
   },
 };
 

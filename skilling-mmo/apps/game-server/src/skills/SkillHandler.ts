@@ -1,13 +1,11 @@
 import {
-  WOODCUTTING,
-  MINING,
-  FARMING,
-  SKILLS,
+  GATHER_NODES,
   applyActionSpeedTicks,
   applyXpGain,
   applyOutputQty,
   toolBonusForSkill,
   type EquipmentLoadout,
+  type GatherNodeDef,
   type SkillId,
 } from "@skilling-mmo/shared";
 
@@ -37,11 +35,12 @@ export interface CompleteResult {
   itemQty: number;
 }
 
-/** Extension seam for future skills (mining, fishing, …). */
+/** Extension seam for gather / craft skill nodes. */
 export interface SkillHandler {
   canHandle(resourceId: string): boolean;
   tryStart(ctx: SkillContext, resourceId: string): StartResult;
   complete(ctx: SkillContext, resourceId: string): CompleteResult;
+  interactRange(): number;
 }
 
 function dist(ax: number, ay: number, bx: number, by: number): number {
@@ -51,18 +50,7 @@ function dist(ax: number, ay: number, bx: number, by: number): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-type GatherDef = {
-  resourceId: string;
-  requiredLevel: number;
-  ticks: number;
-  xp: number;
-  itemId: string;
-  itemQty: number;
-  interactRange: number;
-  skill: SkillId;
-};
-
-function tryStartGather(ctx: SkillContext, def: GatherDef): StartResult {
+function tryStartGather(ctx: SkillContext, def: GatherNodeDef): StartResult {
   const res = ctx.getResource(def.resourceId);
   if (!res || !res.available) {
     return { ok: false, reason: "unavailable", ticksNeeded: 0 };
@@ -80,34 +68,28 @@ function tryStartGather(ctx: SkillContext, def: GatherDef): StartResult {
   };
 }
 
-function completeGather(ctx: SkillContext, def: GatherDef): CompleteResult {
+function completeGather(ctx: SkillContext, def: GatherNodeDef): CompleteResult {
   const start = tryStartGather(ctx, def);
   if (!start.ok) {
     return { ok: false, skill: def.skill, xp: 0, itemId: "", itemQty: 0 };
   }
   const tool = toolBonusForSkill(ctx.equipment, def.skill);
   const xp = applyXpGain(Math.max(1, Math.floor(def.xp * tool.xpMult)), ctx.traits);
-  const itemQty = applyOutputQty(Math.max(1, Math.floor(def.itemQty * tool.outputMult)), ctx.traits);
+  // itemQty 0 = XP-only node (drops wired later)
+  const rawQty = Math.floor(def.itemQty * tool.outputMult);
+  const itemQty =
+    rawQty <= 0 || !def.itemId ? 0 : applyOutputQty(Math.max(1, rawQty), ctx.traits);
   return {
     ok: true,
     skill: def.skill,
     xp,
-    itemId: def.itemId,
+    itemId: itemQty > 0 ? def.itemId : "",
     itemQty,
   };
 }
 
-export class WoodcuttingHandler implements SkillHandler {
-  private def: GatherDef = {
-    resourceId: WOODCUTTING.NORMAL_TREE.resourceId,
-    requiredLevel: WOODCUTTING.NORMAL_TREE.requiredLevel,
-    ticks: WOODCUTTING.NORMAL_TREE.ticksToChop,
-    xp: WOODCUTTING.NORMAL_TREE.xp,
-    itemId: WOODCUTTING.NORMAL_TREE.itemId,
-    itemQty: WOODCUTTING.NORMAL_TREE.itemQty,
-    interactRange: WOODCUTTING.NORMAL_TREE.interactRange,
-    skill: SKILLS.WOODCUTTING,
-  };
+export class GatherSkillHandler implements SkillHandler {
+  constructor(private readonly def: GatherNodeDef) {}
 
   canHandle(resourceId: string): boolean {
     return resourceId === this.def.resourceId;
@@ -119,55 +101,38 @@ export class WoodcuttingHandler implements SkillHandler {
 
   complete(ctx: SkillContext, _resourceId: string): CompleteResult {
     return completeGather(ctx, this.def);
+  }
+
+  interactRange(): number {
+    return this.def.interactRange;
   }
 }
 
-export class MiningHandler implements SkillHandler {
-  private def: GatherDef = {
-    resourceId: MINING.STONE.resourceId,
-    requiredLevel: MINING.STONE.requiredLevel,
-    ticks: MINING.STONE.ticksToMine,
-    xp: MINING.STONE.xp,
-    itemId: MINING.STONE.itemId,
-    itemQty: MINING.STONE.itemQty,
-    interactRange: MINING.STONE.interactRange,
-    skill: SKILLS.MINING,
-  };
+/** One handler per configured gather node. */
+export function createGatherHandlers(): SkillHandler[] {
+  return GATHER_NODES.map((def) => new GatherSkillHandler(def));
+}
 
-  canHandle(resourceId: string): boolean {
-    return resourceId === this.def.resourceId;
-  }
-
-  tryStart(ctx: SkillContext, _resourceId: string): StartResult {
-    return tryStartGather(ctx, this.def);
-  }
-
-  complete(ctx: SkillContext, _resourceId: string): CompleteResult {
-    return completeGather(ctx, this.def);
+/** @deprecated Prefer createGatherHandlers(); kept for any direct imports. */
+export class WoodcuttingHandler extends GatherSkillHandler {
+  constructor() {
+    const def = GATHER_NODES.find((n) => n.resourceId === "tree_normal")!;
+    super(def);
   }
 }
 
-export class FarmingHandler implements SkillHandler {
-  private def: GatherDef = {
-    resourceId: FARMING.WHEAT.resourceId,
-    requiredLevel: FARMING.WHEAT.requiredLevel,
-    ticks: FARMING.WHEAT.ticksToHarvest,
-    xp: FARMING.WHEAT.xp,
-    itemId: FARMING.WHEAT.itemId,
-    itemQty: FARMING.WHEAT.itemQty,
-    interactRange: FARMING.WHEAT.interactRange,
-    skill: SKILLS.FARMING,
-  };
-
-  canHandle(resourceId: string): boolean {
-    return resourceId === this.def.resourceId;
+/** @deprecated Prefer createGatherHandlers() */
+export class MiningHandler extends GatherSkillHandler {
+  constructor() {
+    const def = GATHER_NODES.find((n) => n.resourceId === "stone_chunk")!;
+    super(def);
   }
+}
 
-  tryStart(ctx: SkillContext, _resourceId: string): StartResult {
-    return tryStartGather(ctx, this.def);
-  }
-
-  complete(ctx: SkillContext, _resourceId: string): CompleteResult {
-    return completeGather(ctx, this.def);
+/** @deprecated Prefer createGatherHandlers() */
+export class FarmingHandler extends GatherSkillHandler {
+  constructor() {
+    const def = GATHER_NODES.find((n) => n.resourceId === "wheat_plot")!;
+    super(def);
   }
 }

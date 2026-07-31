@@ -419,6 +419,67 @@ export const FARMING = {
   },
 } as const;
 
+/** Shared gather-node shape (itemQty 0 = XP only, drops added later). */
+export interface GatherNodeDef {
+  resourceId: string;
+  skill: SkillId;
+  requiredLevel: number;
+  ticks: number;
+  xp: number;
+  itemId: string;
+  itemQty: number;
+  interactRange: number;
+}
+
+function gatherNode(
+  resourceId: string,
+  skill: SkillId,
+  opts: { itemId?: string; itemQty?: number; ticks?: number; xp?: number } = {},
+): GatherNodeDef {
+  return {
+    resourceId,
+    skill,
+    requiredLevel: 1,
+    ticks: opts.ticks ?? 5,
+    xp: opts.xp ?? 1,
+    itemId: opts.itemId ?? "",
+    itemQty: opts.itemQty ?? 0,
+    interactRange: 48,
+  };
+}
+
+/** All clickable skill action nodes (one per class skill). */
+export const GATHER_NODES: GatherNodeDef[] = [
+  gatherNode(WOODCUTTING.NORMAL_TREE.resourceId, SKILLS.WOODCUTTING, {
+    itemId: WOODCUTTING.NORMAL_TREE.itemId,
+    itemQty: WOODCUTTING.NORMAL_TREE.itemQty,
+    ticks: WOODCUTTING.NORMAL_TREE.ticksToChop,
+    xp: WOODCUTTING.NORMAL_TREE.xp,
+  }),
+  gatherNode("forage_bush", SKILLS.FORAGING),
+  gatherNode("timber_bench", SKILLS.TIMBERWORKING),
+  gatherNode(FARMING.WHEAT.resourceId, SKILLS.FARMING, {
+    itemId: FARMING.WHEAT.itemId,
+    itemQty: FARMING.WHEAT.itemQty,
+    ticks: FARMING.WHEAT.ticksToHarvest,
+    xp: FARMING.WHEAT.xp,
+  }),
+  gatherNode("mill_stone", SKILLS.MILLING),
+  gatherNode("bake_oven", SKILLS.BAKING),
+  gatherNode(MINING.STONE.resourceId, SKILLS.MINING, {
+    itemId: MINING.STONE.itemId,
+    itemQty: MINING.STONE.itemQty,
+    ticks: MINING.STONE.ticksToMine,
+    xp: MINING.STONE.xp,
+  }),
+  gatherNode("gem_vein", SKILLS.GEMSTONE_HARVESTING),
+  gatherNode("ore_vein", SKILLS.ORE_HARVESTING),
+];
+
+export function gatherNodeFor(resourceId: string): GatherNodeDef | undefined {
+  return GATHER_NODES.find((n) => n.resourceId === resourceId);
+}
+
 export {
   ZONES,
   ZONE_LABELS,

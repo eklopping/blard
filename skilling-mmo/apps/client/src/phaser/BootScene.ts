@@ -45,6 +45,67 @@ export class BootScene extends Phaser.Scene {
     g.generateTexture("crop", 32, 32);
     g.clear();
 
+    // Forage bush
+    g.fillStyle(0x3a6a28);
+    g.fillCircle(16, 18, 12);
+    g.fillStyle(0x2a4a1a);
+    g.fillCircle(10, 16, 7);
+    g.fillStyle(0x7a2a4a);
+    g.fillCircle(18, 14, 3);
+    g.fillCircle(12, 20, 2);
+    g.generateTexture("bush", 32, 32);
+    g.clear();
+
+    // Timberworking bench
+    g.fillStyle(0x6b4423);
+    g.fillRect(2, 18, 28, 10);
+    g.fillStyle(0x8a5a30);
+    g.fillRect(4, 10, 24, 10);
+    g.fillStyle(0x4a3018);
+    g.fillRect(6, 12, 8, 6);
+    g.generateTexture("bench", 32, 32);
+    g.clear();
+
+    // Mill stone
+    g.fillStyle(0x7a7a7a);
+    g.fillCircle(16, 16, 13);
+    g.fillStyle(0x555555);
+    g.fillCircle(16, 16, 5);
+    g.fillStyle(0x9a9a9a);
+    g.fillRect(14, 4, 4, 24);
+    g.generateTexture("mill", 32, 32);
+    g.clear();
+
+    // Bake oven
+    g.fillStyle(0x6a4030);
+    g.fillRect(4, 6, 24, 24);
+    g.fillStyle(0x3a2018);
+    g.fillRect(10, 14, 12, 12);
+    g.fillStyle(0xd45a20);
+    g.fillRect(12, 18, 8, 6);
+    g.generateTexture("oven", 32, 32);
+    g.clear();
+
+    // Gem vein
+    g.fillStyle(0x5a5a6a);
+    g.fillCircle(16, 18, 13);
+    g.fillStyle(0x5ad4c4);
+    g.fillCircle(12, 14, 4);
+    g.fillStyle(0xc45ad4);
+    g.fillCircle(20, 18, 3);
+    g.generateTexture("gem", 32, 32);
+    g.clear();
+
+    // Ore vein
+    g.fillStyle(0x5a4a3a);
+    g.fillCircle(16, 18, 13);
+    g.fillStyle(0xb87333);
+    g.fillCircle(14, 14, 5);
+    g.fillStyle(0xd4a050);
+    g.fillCircle(20, 20, 3);
+    g.generateTexture("ore", 32, 32);
+    g.clear();
+
     // Shopkeeper NPC
     g.fillStyle(0x8b5a2b);
     g.fillRect(8, 8, 16, 24);

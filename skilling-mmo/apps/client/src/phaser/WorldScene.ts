@@ -41,9 +41,26 @@ interface WalkState {
 }
 
 function textureForResourceKind(kind: string): string {
-  if (kind === "rock") return "rock";
-  if (kind === "crop") return "crop";
-  return "tree";
+  switch (kind) {
+    case "rock":
+      return "rock";
+    case "crop":
+      return "crop";
+    case "bush":
+      return "bush";
+    case "bench":
+      return "bench";
+    case "mill":
+      return "mill";
+    case "oven":
+      return "oven";
+    case "gem":
+      return "gem";
+    case "ore":
+      return "ore";
+    default:
+      return "tree";
+  }
 }
 
 function textureForNpcKind(kind: string): string {
