@@ -1,9 +1,16 @@
-# Production: set DOMAIN=game.example.com (DNS A/AAAA → this VM).
+# Production: set DOMAIN=arsperita.com (DNS A/AAAA → this VM).
 # Caddy obtains a Let's Encrypt certificate automatically on :443.
 # Local/IP-only: set DOMAIN=localhost (HTTP only; LE will not issue for IPs).
 #
-# Optional: ACME_EMAIL in the environment is used if present (Compose passes it through).
+# Prefer HTTP-01 (port 80) over TLS-ALPN-01 — ALPN often fails behind
+# cloud NATs, CDNs, or when something else terminates 443.
 # Certs persist in the caddy_data Docker volume.
+
+{
+	email {$ACME_EMAIL}
+	# Force HTTP-01 challenge on :80 (requires inbound TCP 80 open to the world)
+	auto_https disable_tls_alpn_challenge
+}
 
 {$DOMAIN:localhost} {
 	encode gzip
