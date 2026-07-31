@@ -1036,6 +1036,19 @@ export class WorldRoom extends Room<WorldState> {
         if (findNpc(pendingInteract)) {
           this.resolveNpcInteract(client, playerId, ps, pendingInteract);
         } else {
+          const resource = this.state.resources.get(pendingInteract);
+          if (!resource) return;
+          const range = this.interactRangeFor(pendingInteract);
+          const dist = Math.hypot(ps.x - resource.x, ps.y - resource.y);
+          if (!Number.isFinite(dist) || dist > range + 8) {
+            client?.send("ActionResult", {
+              type: "ActionResult",
+              ok: false,
+              reason: "too_far",
+              resourceId: pendingInteract,
+            });
+            return;
+          }
           this.tryStartSkill(client, playerId, ps, pendingInteract);
         }
       },

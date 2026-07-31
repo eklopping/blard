@@ -65,6 +65,18 @@ export function clampToWorld(x: number, y: number): Vec2 {
   };
 }
 
+/** True when a world point lies inside the playable map (not the void around it). */
+export function isInsideWorld(x: number, y: number): boolean {
+  return (
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    x >= 0 &&
+    y >= 0 &&
+    x < WORLD_WIDTH_PX &&
+    y < WORLD_HEIGHT_PX
+  );
+}
+
 export function isWalkable(grid: WalkGrid, tx: number, ty: number): boolean {
   if (ty < 0 || tx < 0 || ty >= grid.length) return false;
   const row = grid[ty];
@@ -72,10 +84,21 @@ export function isWalkable(grid: WalkGrid, tx: number, ty: number): boolean {
   return row[tx] === true;
 }
 
-/** Snap world point to nearest walkable tile center (or null if none). */
-export function snapToTileCenter(x: number, y: number, grid?: WalkGrid): Vec2 | null {
+/**
+ * Snap world point to nearest walkable tile center (or null if none).
+ * When `clamp` is false (click-to-move), points outside the map are rejected
+ * instead of snapping to the nearest edge — that edge-snap felt like a "reset".
+ */
+export function snapToTileCenter(
+  x: number,
+  y: number,
+  grid?: WalkGrid,
+  clamp = true,
+): Vec2 | null {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (!clamp && !isInsideWorld(x, y)) return null;
   const g = grid ?? createOpenWalkGrid();
-  const clamped = clampToWorld(x, y);
+  const clamped = clamp ? clampToWorld(x, y) : { x, y };
   const { tx, ty } = worldToTile(clamped.x, clamped.y);
   if (isWalkable(g, tx, ty)) {
     return tileToWorldCenter(tx, ty);

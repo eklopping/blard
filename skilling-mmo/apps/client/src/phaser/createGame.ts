@@ -24,16 +24,22 @@ export interface GameBridge {
 export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameBridge {
   let world: WorldScene | null = null;
 
+  const parentW = Math.max(1, parent.clientWidth || window.innerWidth);
+  const parentH = Math.max(1, parent.clientHeight || window.innerHeight);
+
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: parentW,
+    height: parentH,
     backgroundColor: "#1a2e1a",
     scene: [BootScene, WorldScene],
     scale: {
       mode: Phaser.Scale.RESIZE,
+      parent,
       autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: parentW,
+      height: parentH,
     },
     callbacks: {
       preBoot: (g) => {
@@ -44,6 +50,17 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
       },
     },
   });
+
+  // Keep canvas matched to #game-root (excludes HUD) on layout changes
+  const ro =
+    typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => {
+          const w = Math.max(1, parent.clientWidth);
+          const h = Math.max(1, parent.clientHeight);
+          game.scale.resize(w, h);
+        })
+      : null;
+  ro?.observe(parent);
 
   const onVisibility = () => {
     if (document.hidden) {
@@ -57,6 +74,7 @@ export function createGame(parent: HTMLElement, callbacks: GameCallbacks): GameB
   return {
     destroy: () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      ro?.disconnect();
       game.destroy(true);
     },
     applySnapshot: (snap) => world?.applySnapshot(snap),

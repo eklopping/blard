@@ -45,7 +45,8 @@ export class MovementController {
 
   /** Set walk destination from a world click. Clears pending interact. */
   setMoveTarget(playerId: string, x: number, y: number): Vec2 | null {
-    const target = snapToTileCenter(x, y, this.grid);
+    // Reject off-map clicks — do not clamp to the edge (that teleports players).
+    const target = snapToTileCenter(x, y, this.grid, false);
     if (!target) return null;
     const state = this.ensure(playerId);
     state.target = target;
@@ -64,6 +65,17 @@ export class MovementController {
     resource: Vec2,
     interactRange: number,
   ): { inRange: true } | { inRange: false; target: Vec2 | null } {
+    if (
+      !Number.isFinite(from.x) ||
+      !Number.isFinite(from.y) ||
+      !Number.isFinite(resource.x) ||
+      !Number.isFinite(resource.y) ||
+      !Number.isFinite(interactRange) ||
+      interactRange <= 0
+    ) {
+      return { inRange: false, target: null };
+    }
+
     const approach = findClosestSideApproach(from, resource, undefined, this.grid);
     const state = this.ensure(playerId);
 
@@ -73,9 +85,10 @@ export class MovementController {
       return { inRange: false, target: null };
     }
 
+    const distToRes = Math.hypot(from.x - resource.x, from.y - resource.y);
     const atStand =
       Math.hypot(from.x - approach.x, from.y - approach.y) <= ARRIVE_EPSILON_PX + 4;
-    const inResRange = Math.hypot(from.x - resource.x, from.y - resource.y) <= interactRange;
+    const inResRange = distToRes <= interactRange;
 
     if (atStand && inResRange) {
       state.target = null;

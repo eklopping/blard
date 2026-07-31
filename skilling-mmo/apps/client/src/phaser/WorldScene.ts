@@ -11,6 +11,7 @@ import {
   WORLD_WIDTH_PX,
   WORLD_HEIGHT_PX,
   snapToTileCenter,
+  isInsideWorld,
   findClosestSideApproach,
   stepToward,
   zoneForResource,
@@ -134,10 +135,17 @@ export class WorldScene extends Phaser.Scene {
       "pointerdown",
       (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
         if (pointer.rightButtonDown()) return;
+        // Ignore clicks that didn't land on the game canvas (HUD / off-window)
+        const target = pointer.event?.target as HTMLElement | undefined;
+        if (target && this.game.canvas && target !== this.game.canvas && !this.game.canvas.contains(target)) {
+          return;
+        }
         // Don't also issue Move when clicking resources/NPCs (and avoid stealing the gesture)
         if (currentlyOver && currentlyOver.length > 0) return;
+        if (!isInsideWorld(pointer.worldX, pointer.worldY)) return;
         if (this.hitWorldEntity(pointer.worldX, pointer.worldY)) return;
-        const snapped = snapToTileCenter(pointer.worldX, pointer.worldY);
+        // No edge-clamp — off-map clicks are ignored above
+        const snapped = snapToTileCenter(pointer.worldX, pointer.worldY, undefined, false);
         if (!snapped) return;
         this.cancelEngagement();
         this.predictedTarget = snapped;
@@ -526,6 +534,10 @@ export class WorldScene extends Phaser.Scene {
     if (msg.ok && msg.action === "gather") {
       this.acting = true;
       this.predictedTarget = undefined;
+      // Server only starts gather in-range — snap local sprite so we don't chop mid-map
+      if (this.localPlayer && this.serverPos) {
+        this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+      }
       if (this.localId) this.setWalking(this.localId, false);
       this.startChopVfx();
       return;
@@ -637,7 +649,8 @@ export class WorldScene extends Phaser.Scene {
       if (this.engagedResourceId !== resourceId) return;
       this.cooldownUntil.delete(resourceId);
       this.refreshResourceAlpha();
-      this.callbacks.onInteractResource(resourceId);
+      // Re-use engage path so we walk back into range if we drifted
+      this.tryEngageResource(resourceId);
     }, delay);
   }
 

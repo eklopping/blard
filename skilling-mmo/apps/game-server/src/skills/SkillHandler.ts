@@ -45,6 +45,7 @@ export interface SkillHandler {
 }
 
 function dist(ax: number, ay: number, bx: number, by: number): number {
+  if (![ax, ay, bx, by].every(Number.isFinite)) return Number.POSITIVE_INFINITY;
   const dx = ax - bx;
   const dy = ay - by;
   return Math.sqrt(dx * dx + dy * dy);

@@ -97,6 +97,7 @@ export {
   worldToTile,
   tileToWorldCenter,
   clampToWorld,
+  isInsideWorld,
   isWalkable,
   snapToTileCenter,
   stepToward,
