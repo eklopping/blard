@@ -34,12 +34,23 @@ import {
   shopBuyPrice,
   shopSellPrice,
   ITEM_DEFS,
+  CLASS_IDS,
+  isClassId,
+  emptyClassProgress,
+  applySkillLevelUpsToClasses,
+  unlockClassWithCatchUp,
+  classesToDto,
+  serializeClasses,
+  starterClassForProfession,
   type ClientMessage,
   type ChatMessageDto,
   type EquipmentLoadout,
   type ItemLocation,
   type ZoneId,
   type NpcSnapshot,
+  type ClassId,
+  type ClassProgressState,
+  type ProfessionId,
   SYSTEM_CHAT_SENDER_ID,
 } from "@skilling-mmo/shared";
 import {
@@ -77,6 +88,8 @@ class PlayerState extends Schema {
   @type("number") inventoryCapacity: number = 6;
   @type("string") inventoryJson: string = "[]";
   @type("string") equipmentJson: string = "{}";
+  /** JSON array of ClassProgressDto for live HUD */
+  @type("string") classesJson: string = "[]";
 }
 
 class ResourceState extends Schema {
@@ -116,6 +129,7 @@ export class WorldRoom extends Room<WorldState> {
     new FarmingHandler(),
   ];
   private playerSkills = new Map<string, Map<string, { level: number; xp: number }>>();
+  private playerClasses = new Map<string, Map<ClassId, ClassProgressState>>();
   private playerInventory = new Map<string, { slot: number; itemId: string | null; quantity: number }[]>();
   private playerCoins = new Map<string, number>();
   private playerTraits = new Map<string, string[]>();
@@ -178,6 +192,65 @@ export class WorldRoom extends Room<WorldState> {
     }));
   }
 
+  /**
+   * Load class rows (or seed defaults). Starter profession is unlocked;
+   * unlocked classes with 0 XP get one-time catch-up from current skill levels
+   * (covers characters that leveled before class progress existed).
+   */
+  private loadOrSeedClasses(
+    _playerId: string,
+    rows: { classId: string; level: number; xp: number; unlocked: boolean }[],
+    profession: ProfessionId,
+    skills: Map<string, { level: number; xp: number }>,
+  ): Map<ClassId, ClassProgressState> {
+    const classes = new Map<ClassId, ClassProgressState>();
+    for (const classId of CLASS_IDS) {
+      classes.set(classId, emptyClassProgress(false));
+    }
+    for (const row of rows) {
+      if (!isClassId(row.classId)) continue;
+      classes.set(row.classId, {
+        level: row.level,
+        xp: row.xp,
+        unlocked: row.unlocked,
+      });
+    }
+
+    const starter = starterClassForProfession(profession);
+    if (!classes.get(starter)!.unlocked) {
+      unlockClassWithCatchUp(classes, skills, starter);
+    }
+
+    // One-time catch-up for unlocked classes still at 0 XP with leveled skills
+    for (const classId of CLASS_IDS) {
+      const row = classes.get(classId)!;
+      if (!row.unlocked || row.xp > 0) continue;
+      const temp = new Map<ClassId, ClassProgressState>([
+        [classId, { level: 1, xp: 0, unlocked: false }],
+      ]);
+      unlockClassWithCatchUp(temp, skills, classId);
+      const filled = temp.get(classId)!;
+      row.xp = filled.xp;
+      row.level = filled.level;
+    }
+
+    return classes;
+  }
+
+  /** Unlock a class and apply shared-skill catch-up XP (for future unlock flows). */
+  unlockPlayerClass(playerId: string, classId: ClassId): boolean {
+    const classes = this.playerClasses.get(playerId);
+    const skills = this.playerSkills.get(playerId);
+    if (!classes || !skills) return false;
+    const before = classes.get(classId)?.unlocked ?? false;
+    if (before) return false;
+    unlockClassWithCatchUp(classes, skills, classId);
+    const ps = this.state.players.get(playerId);
+    this.syncHudState(playerId, ps);
+    enqueueDirtyPlayer(playerId, { classes });
+    return true;
+  }
+
   /** Push in-memory skills/inventory/coins onto synced PlayerState for live HUD. */
   private syncHudState(playerId: string, ps?: PlayerState) {
     const player = ps ?? this.state.players.get(playerId);
@@ -197,6 +270,8 @@ export class WorldRoom extends Room<WorldState> {
     player.inventoryCapacity = inventoryCapacity(equipment);
     player.equipmentJson = serializeEquipment(equipment);
     player.inventoryJson = JSON.stringify(this.visibleInventory(playerId));
+    const classes = this.playerClasses.get(playerId);
+    player.classesJson = classes ? serializeClasses(classes) : "[]";
   }
 
   private snapshotPlayers() {
@@ -266,6 +341,7 @@ export class WorldRoom extends Room<WorldState> {
       where: { id: auth.playerId },
       include: {
         skills: true,
+        classes: true,
         inventory: { orderBy: { slot: "asc" } },
       },
     });
@@ -293,6 +369,11 @@ export class WorldRoom extends Room<WorldState> {
       if (!skills.has(skill)) skills.set(skill, { level: 1, xp: 0 });
     }
     this.playerSkills.set(player.id, skills);
+
+    const profession = player.profession.toLowerCase() as ProfessionId;
+    const classes = this.loadOrSeedClasses(player.id, player.classes, profession, skills);
+    this.playerClasses.set(player.id, classes);
+
     this.playerInventory.set(player.id, padInventory(player.inventory));
     this.playerCoins.set(player.id, player.coins);
     this.playerTraits.set(player.id, player.traits ?? []);
@@ -305,6 +386,9 @@ export class WorldRoom extends Room<WorldState> {
     if (Math.abs(player.x - TOWN_SPAWN.x) > 1 || Math.abs(player.y - TOWN_SPAWN.y) > 1) {
       enqueueDirtyPlayer(player.id, { x: ps.x, y: ps.y });
     }
+
+    // Persist class catch-up / seed if anything changed vs DB
+    enqueueDirtyPlayer(player.id, { classes });
 
     client.send("StateSnapshot", {
       type: "StateSnapshot",
@@ -325,7 +409,9 @@ export class WorldRoom extends Room<WorldState> {
           level: v.level,
           xp: v.xp,
         })),
+        classes: classesToDto(classes),
         coins: player.coins,
+        profession,
         traits: player.traits,
         appearance: this.appearanceOf(ps),
         equipment,
@@ -361,6 +447,7 @@ export class WorldRoom extends Room<WorldState> {
         coins: this.playerCoins.get(playerId),
         inventory: this.playerInventory.get(playerId),
         skills: this.playerSkills.get(playerId),
+        classes: this.playerClasses.get(playerId),
         equipmentJson: serializeEquipment(this.playerEquipment.get(playerId) ?? {}),
       });
       // Remove from live state first so other clients drop the sprite immediately
@@ -368,6 +455,7 @@ export class WorldRoom extends Room<WorldState> {
       await flushDirtyPlayers();
     }
     this.playerSkills.delete(playerId);
+    this.playerClasses.delete(playerId);
     this.playerInventory.delete(playerId);
     this.playerCoins.delete(playerId);
     this.playerTraits.delete(playerId);
@@ -1095,9 +1183,15 @@ export class WorldRoom extends Room<WorldState> {
       // Grant XP + items (server authoritative)
       const skills = this.playerSkills.get(playerId)!;
       const cur = skills.get(result.skill) ?? { level: 1, xp: 0 };
+      const oldLevel = cur.level;
       const newXp = cur.xp + result.xp;
       const newLevel = levelFromXp(newXp);
       skills.set(result.skill, { level: newLevel, xp: newXp });
+
+      const classes = this.playerClasses.get(playerId);
+      if (classes && newLevel > oldLevel) {
+        applySkillLevelUpsToClasses(classes, result.skill, oldLevel, newLevel);
+      }
 
       this.addItem(playerId, result.itemId, result.itemQty);
       this.syncHudState(playerId, ps);
@@ -1120,6 +1214,7 @@ export class WorldRoom extends Room<WorldState> {
           skillId: skillUpdate.skill,
           skillLevel: skillUpdate.level,
           skillXp: skillUpdate.xp,
+          classesJson: classes ? serializeClasses(classes) : undefined,
           inventoryJson: JSON.stringify(inventoryUpdate),
         });
       }
@@ -1127,6 +1222,7 @@ export class WorldRoom extends Room<WorldState> {
       enqueueDirtyPlayer(playerId, {
         inventory: this.playerInventory.get(playerId),
         skills,
+        classes,
         ledger: {
           type: LedgerType.SKILL_REWARD,
           itemId: result.itemId,

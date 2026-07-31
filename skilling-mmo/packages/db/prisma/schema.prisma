@@ -40,6 +40,7 @@ model Player {
   updatedAt  DateTime   @updatedAt
 
   skills       SkillProgress[]
+  classes      ClassProgress[]
   inventory    InventorySlot[]
   bank         BankSlot[]
   marketOrders MarketOrder[]
@@ -67,6 +68,21 @@ model SkillProgress {
   xp       Int    @default(0)
 
   @@unique([playerId, skill])
+  @@index([playerId])
+}
+
+/// Class level fed by contributing sub-skill level-ups (see CLASS_SKILLS).
+model ClassProgress {
+  id       String  @id @default(cuid())
+  playerId String
+  player   Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  /// woodsman | farmer | miner (ClassId)
+  classId  String
+  level    Int     @default(1)
+  xp       Int     @default(0)
+  unlocked Boolean @default(false)
+
+  @@unique([playerId, classId])
   @@index([playerId])
 }
 

@@ -4,12 +4,19 @@ import type {
   ServerMessage,
   InventorySlotDto,
   SkillProgressDto,
+  ClassProgressDto,
   ChatMessageDto,
   PlayerSnapshot,
   SkillId,
   EquipmentLoadout,
 } from "@skilling-mmo/shared";
-import { SKILLS, INVENTORY_BASE_SLOTS, parseEquipmentJson, isZoneId } from "@skilling-mmo/shared";
+import {
+  SKILLS,
+  INVENTORY_BASE_SLOTS,
+  parseEquipmentJson,
+  parseClassesJson,
+  isZoneId,
+} from "@skilling-mmo/shared";
 import type { ZoneId } from "@skilling-mmo/shared";
 
 /** Colyseus endpoint must be a full origin (ws://host), never a path like /ws. */
@@ -33,6 +40,7 @@ function resolveEndpoint(): string {
 
 export interface HudLiveState {
   skills: SkillProgressDto[];
+  classes: ClassProgressDto[];
   inventory: InventorySlotDto[];
   coins: number;
   inventoryCapacity: number;
@@ -50,6 +58,7 @@ export interface ConnectHandlers {
   onSnapshot: (snap: Extract<ServerMessage, { type: "StateSnapshot" }>) => void;
   onInventory: (slots: InventorySlotDto[]) => void;
   onSkill: (s: SkillProgressDto) => void;
+  onClasses?: (classes: ClassProgressDto[]) => void;
   onCoins?: (coins: number) => void;
   onEquipment?: (equipment: EquipmentLoadout, capacity: number) => void;
   onAction: (msg: Extract<ServerMessage, { type: "ActionResult" }>) => void;
@@ -121,6 +130,7 @@ function parseActionResult(msg: unknown): Extract<ServerMessage, { type: "Action
     x: typeof m.x === "number" ? m.x : undefined,
     y: typeof m.y === "number" ? m.y : undefined,
     skill,
+    classesJson: typeof m.classesJson === "string" ? m.classesJson : undefined,
     inventory: inventory ?? undefined,
   };
 }
@@ -144,6 +154,7 @@ export async function connectGame(
   let localPlayerId = "";
   let hudState: HudLiveState = {
     skills: [],
+    classes: [],
     inventory: [],
     coins: 0,
     inventoryCapacity: INVENTORY_BASE_SLOTS,
@@ -152,6 +163,7 @@ export async function connectGame(
   /** Last inventoryJson string applied — skip redundant React updates. */
   let lastInventoryJson = "";
   let lastEquipmentJson = "";
+  let lastClassesJson = "";
 
   function applySkill(s: SkillProgressDto) {
     const existing = hudState.skills.find((x) => x.skill === s.skill);
@@ -162,6 +174,13 @@ export async function connectGame(
       skills: [...rest, { skill: s.skill, level: s.level, xp: s.xp }],
     };
     handlers.onSkill(s);
+  }
+
+  function applyClasses(classes: ClassProgressDto[], rawJson?: string) {
+    if (rawJson != null && rawJson === lastClassesJson) return;
+    if (rawJson != null) lastClassesJson = rawJson;
+    hudState = { ...hudState, classes: classes.map((c) => ({ ...c })) };
+    handlers.onClasses?.(hudState.classes);
   }
 
   function applyInventory(slots: InventorySlotDto[]) {
@@ -228,6 +247,10 @@ export async function connectGame(
       const inv = parseInventoryJson(p.inventoryJson);
       if (inv) applyInventory(inv);
     }
+    if (typeof p.classesJson === "string") {
+      const parsed = parseClassesJson(p.classesJson);
+      if (parsed) applyClasses(parsed, p.classesJson);
+    }
   }
 
   function upsertOnlinePlayer(p: any, mapKey: string) {
@@ -293,6 +316,7 @@ export async function connectGame(
     p.listen("inventoryJson", () => maybeHud());
     p.listen("equipmentJson", () => maybeHud());
     p.listen("inventoryCapacity", () => maybeHud());
+    p.listen("classesJson", () => maybeHud());
   }
 
   function wireStateCallbacks(r: Room) {
@@ -323,15 +347,19 @@ export async function connectGame(
       localPlayerId = msg.you?.playerId ?? localPlayerId;
       lastInventoryJson = "";
       lastEquipmentJson = "";
+      lastClassesJson = "";
       hudState = {
         skills: (msg.you?.skills ?? []).map((s) => ({ ...s })),
+        classes: (msg.you?.classes ?? []).map((c) => ({ ...c })),
         inventory: (msg.you?.inventory ?? []).map((s) => ({ ...s })),
         coins: msg.you?.coins ?? 0,
         inventoryCapacity: msg.you?.inventoryCapacity ?? INVENTORY_BASE_SLOTS,
         equipment: msg.you?.equipment ?? {},
       };
+      if (msg.you?.classes) lastClassesJson = JSON.stringify(msg.you.classes);
       handlers.onSnapshot(msg);
       handlers.onEquipment?.(hudState.equipment, hudState.inventoryCapacity);
+      if (hudState.classes.length) handlers.onClasses?.(hudState.classes);
 
       // Snapshot may arrive after onAdd — refresh local HUD from live schema
       const players = (room?.state as any)?.players;
@@ -357,6 +385,10 @@ export async function connectGame(
       ]);
       if (parsed.ok && parsed.action && syncHudActions.has(parsed.action)) {
         if (parsed.skill) applySkill(parsed.skill);
+        if (typeof parsed.classesJson === "string") {
+          const parsedClasses = parseClassesJson(parsed.classesJson);
+          if (parsedClasses) applyClasses(parsedClasses, parsed.classesJson);
+        }
         if (parsed.inventory) {
           lastInventoryJson = parsed.inventoryJson ?? lastInventoryJson;
           applyInventory(parsed.inventory);

@@ -11,6 +11,7 @@ import { connectGame, type GameConnection } from "../net/colyseusClient";
 import type {
   InventorySlotDto,
   SkillProgressDto,
+  ClassProgressDto,
   CharacterAuthResponse,
   ChatMessageDto,
   ChatInboxThreadDto,
@@ -51,6 +52,7 @@ export function App() {
   const [inventoryCapacity, setInventoryCapacity] = useState(INVENTORY_BASE_SLOTS);
   const [equipment, setEquipment] = useState<EquipmentLoadout>({});
   const [skills, setSkills] = useState<SkillProgressDto[]>([]);
+  const [classes, setClasses] = useState<ClassProgressDto[]>([]);
   const [coins, setCoins] = useState(0);
   const [status, setStatus] = useState("idle");
   const [bank, setBank] = useState<InventorySlotDto[]>([]);
@@ -292,6 +294,10 @@ export function App() {
         return [...rest, { skill: s.skill, level: s.level, xp: s.xp }];
       });
     };
+    const onClasses = (next: ClassProgressDto[]) => {
+      if (cancelled) return;
+      setClasses(next.map((c) => ({ ...c })));
+    };
 
     (async () => {
       setStatus("connecting…");
@@ -301,6 +307,7 @@ export function App() {
             if (cancelled) return;
             setInventory((snap.you.inventory ?? []).map((s) => ({ ...s })));
             setSkills((snap.you.skills ?? []).map((s) => ({ ...s })));
+            setClasses((snap.you.classes ?? []).map((c) => ({ ...c })));
             setCoins(snap.you.coins);
             if (snap.you.equipment) setEquipment(snap.you.equipment);
             if (typeof snap.you.inventoryCapacity === "number") {
@@ -311,6 +318,7 @@ export function App() {
           },
           onInventory,
           onSkill,
+          onClasses,
           onCoins: (coins) => {
             if (!cancelled) setCoins(coins);
           },
@@ -401,6 +409,7 @@ export function App() {
         const hud = c.getHudState();
         setInventory(hud.inventory.map((s) => ({ ...s })));
         setSkills(hud.skills.map((s) => ({ ...s })));
+        setClasses(hud.classes.map((c) => ({ ...c })));
         setCoins(hud.coins);
         void loadMutes();
         void loadPublic();
@@ -498,6 +507,22 @@ export function App() {
         }
         return next.map((s) => ({ ...s }));
       });
+      setClasses((prev) => {
+        const next = hud.classes;
+        if (
+          prev.length === next.length &&
+          prev.every(
+            (c, i) =>
+              c.classId === next[i]?.classId &&
+              c.level === next[i]?.level &&
+              c.xp === next[i]?.xp &&
+              c.unlocked === next[i]?.unlocked,
+          )
+        ) {
+          return prev;
+        }
+        return next.map((c) => ({ ...c }));
+      });
       setInventory((prev) => {
         const next = hud.inventory;
         if (
@@ -576,6 +601,7 @@ export function App() {
             coins={coins}
             status={status}
             skills={skills}
+            classes={classes}
             panel={panel}
             onPanel={setPanel}
             inventory={inventory}

@@ -3,6 +3,7 @@
 import type { TraitId } from "./traits.js";
 import type { Appearance } from "./avatar.js";
 import type { ZoneId, NpcKind, OpenPanelKind } from "./zones.js";
+import type { ClassProgressDto } from "./classes.js";
 
 export const TICK_MS = 600;
 
@@ -106,23 +107,32 @@ export {
   type WalkGrid,
 } from "./nav.js";
 
-/** XP required to reach level (index = level). Level 1 starts with 0 XP. */
-export function xpForLevel(level: number): number {
-  if (level <= 1) return 0;
-  let total = 0;
-  for (let l = 1; l < level; l++) {
-    total += Math.floor(l + 300 * Math.pow(2, l / 7));
-  }
-  return Math.floor(total / 4);
-}
+export { xpForLevel, levelFromXp } from "./xp.js";
 
-export function levelFromXp(xp: number): number {
-  let level = 1;
-  while (level < 99 && xpForLevel(level + 1) <= xp) {
-    level++;
-  }
-  return level;
-}
+export {
+  CLASSES,
+  CLASS_IDS,
+  CLASS_LABELS,
+  CLASS_SKILLS,
+  CLASS_LEVEL_BOONS,
+  classesForSkill,
+  classXpForSkillLevel,
+  classXpFromSkillLevels,
+  classLevelFromXp,
+  classBoonsEarned,
+  isClassId,
+  starterClassForProfession,
+  emptyClassProgress,
+  applySkillLevelUpsToClasses,
+  unlockClassWithCatchUp,
+  classesToDto,
+  serializeClasses,
+  parseClassesJson,
+  type ClassId,
+  type ClassProgressDto,
+  type ClassProgressState,
+  type ClassBoonDef,
+} from "./classes.js";
 
 export const ITEMS = {
   LOGS: "logs",
@@ -488,6 +498,8 @@ export type ServerMessage =
       x?: number;
       y?: number;
       skill?: SkillProgressDto;
+      /** Flat JSON array of ClassProgressDto — preferred for multi-class sync */
+      classesJson?: string;
       inventory?: InventorySlotDto[];
     }
   | { type: "OpenPanel"; panel: OpenPanelKind }
@@ -528,6 +540,7 @@ export interface SelfSnapshot {
   playerId: string;
   inventory: InventorySlotDto[];
   skills: SkillProgressDto[];
+  classes?: ClassProgressDto[];
   coins: number;
   profession?: ProfessionId;
   traits?: TraitId[];

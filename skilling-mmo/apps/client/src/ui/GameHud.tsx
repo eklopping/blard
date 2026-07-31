@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import type {
   InventorySlotDto,
   SkillProgressDto,
+  ClassProgressDto,
   Appearance,
   ProfessionId,
   TraitId,
@@ -11,7 +12,7 @@ import type {
   EquipmentLoadout,
   ItemLocation,
 } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS, CLASS_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
 import { InventoryPanel } from "./InventoryPanel";
 import { MarketPanel } from "./MarketPanel";
@@ -30,6 +31,7 @@ export function GameHud({
   coins,
   status,
   skills,
+  classes,
   panel,
   onPanel,
   inventory,
@@ -66,6 +68,7 @@ export function GameHud({
   coins: number;
   status: string;
   skills: SkillProgressDto[];
+  classes: ClassProgressDto[];
   panel: HudPanel;
   onPanel: (p: HudPanel) => void;
   inventory: InventorySlotDto[];
@@ -167,6 +170,27 @@ export function GameHud({
           <button type="button" className="danger-btn" onClick={onLogout}>
             Log out
           </button>
+        </div>
+
+        <div className="hud-section hud-skills-section">
+          <h2>Classes</h2>
+          <ul className="hud-skills-list">
+            {classes.filter((c) => c.unlocked).length === 0 ? (
+              <li className="muted">No classes unlocked</li>
+            ) : (
+              classes
+                .filter((c) => c.unlocked)
+                .slice()
+                .sort((a, b) => a.classId.localeCompare(b.classId))
+                .map((c) => (
+                  <li key={c.classId}>
+                    <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
+                    <span className="skill-level">Lv {c.level}</span>
+                    <span className="skill-xp">{c.xp} xp</span>
+                  </li>
+                ))
+            )}
+          </ul>
         </div>
 
         <div className="hud-section hud-skills-section">

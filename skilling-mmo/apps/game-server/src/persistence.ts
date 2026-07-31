@@ -7,6 +7,7 @@ interface DirtyPayload {
   equipmentJson?: string;
   inventory?: { slot: number; itemId: string | null; quantity: number }[];
   skills?: Map<string, { level: number; xp: number }>;
+  classes?: Map<string, { level: number; xp: number; unlocked: boolean }>;
   ledger?: {
     type: (typeof LedgerType)[keyof typeof LedgerType];
     itemId?: string;
@@ -24,6 +25,7 @@ export function enqueueDirtyPlayer(playerId: string, patch: DirtyPayload) {
     ...patch,
     inventory: patch.inventory ?? cur.inventory,
     skills: patch.skills ?? cur.skills,
+    classes: patch.classes ?? cur.classes,
     ledger: patch.ledger ?? cur.ledger,
     equipmentJson: patch.equipmentJson ?? cur.equipmentJson,
   });
@@ -68,6 +70,21 @@ export async function flushDirtyPlayers() {
               where: { playerId_skill: { playerId, skill } },
               create: { playerId, skill, level: v.level, xp: v.xp },
               update: { level: v.level, xp: v.xp },
+            });
+          }
+        }
+        if (data.classes) {
+          for (const [classId, v] of data.classes) {
+            await tx.classProgress.upsert({
+              where: { playerId_classId: { playerId, classId } },
+              create: {
+                playerId,
+                classId,
+                level: v.level,
+                xp: v.xp,
+                unlocked: v.unlocked,
+              },
+              update: { level: v.level, xp: v.xp, unlocked: v.unlocked },
             });
           }
         }

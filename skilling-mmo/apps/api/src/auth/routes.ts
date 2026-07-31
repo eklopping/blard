@@ -10,6 +10,8 @@ import {
   DEFAULT_APPEARANCE,
   TOWN_SPAWN,
   professionStarterBagItems,
+  CLASS_IDS,
+  starterClassForProfession,
   type ProfessionId,
   type SkillId,
   type TraitId,
@@ -91,6 +93,7 @@ async function createPlayerForAccount(
   const skills = startingSkills(profession);
   const existingCount = await prisma.player.count({ where: { accountId } });
   const starterItems = professionStarterBagItems(profession);
+  const starterClass = starterClassForProfession(profession);
   const player = await prisma.player.create({
     data: {
       accountId,
@@ -108,6 +111,14 @@ async function createPlayerForAccount(
       y: TOWN_SPAWN.y,
       skills: {
         create: skills.map((skill) => ({ skill, level: 1, xp: 0 })),
+      },
+      classes: {
+        create: CLASS_IDS.map((classId) => ({
+          classId,
+          level: 1,
+          xp: 0,
+          unlocked: classId === starterClass,
+        })),
       },
       inventory: {
         create: Array.from({ length: INVENTORY_SIZE }, (_, slot) => {
