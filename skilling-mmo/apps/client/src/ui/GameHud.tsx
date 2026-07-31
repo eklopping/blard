@@ -13,7 +13,7 @@ import type {
   EquipmentLoadout,
   ItemLocation,
 } from "@skilling-mmo/shared";
-import { PROFESSION_LABELS, CLASS_LABELS, TRAIT_DEFS } from "@skilling-mmo/shared";
+import { PROFESSION_LABELS, CLASS_LABELS, CLASS_SKILLS, TRAIT_DEFS } from "@skilling-mmo/shared";
 import { PixelAvatarPreview } from "./PixelAvatarPreview";
 import { InventoryPanel } from "./InventoryPanel";
 import { MarketPanel } from "./MarketPanel";
@@ -145,11 +145,14 @@ export function GameHud({
                   }}
                   aria-label="Active class"
                 >
-                  {unlockedClasses.map((c) => (
-                    <option key={c.classId} value={c.classId}>
-                      {CLASS_LABELS[c.classId]} · Lv {c.level}
-                    </option>
-                  ))}
+                  {unlockedClasses.map((c) => {
+                    const skillNames = CLASS_SKILLS[c.classId].join(", ");
+                    return (
+                      <option key={c.classId} value={c.classId}>
+                        {CLASS_LABELS[c.classId]} · Lv {c.level} ({skillNames})
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
             ) : (
@@ -205,18 +208,25 @@ export function GameHud({
         <div className="hud-section hud-skills-section">
           <h2>Classes</h2>
           <ul className="hud-skills-list">
-            {classes.filter((c) => c.unlocked).length === 0 ? (
+            {unlockedClasses.length === 0 ? (
               <li className="muted">No classes unlocked</li>
             ) : (
-              classes
-                .filter((c) => c.unlocked)
+              unlockedClasses
                 .slice()
                 .sort((a, b) => a.classId.localeCompare(b.classId))
                 .map((c) => (
                   <li key={c.classId} className={c.classId === selectedClass ? "active-class" : ""}>
-                    <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
-                    <span className="skill-level">Lv {c.level}</span>
-                    <span className="skill-xp">{c.xp} xp</span>
+                    <button
+                      type="button"
+                      className="hud-class-row"
+                      onClick={() => {
+                        if (c.classId !== selectedClass) onSetActiveClass(c.classId);
+                      }}
+                    >
+                      <span className="skill-name">{CLASS_LABELS[c.classId]}</span>
+                      <span className="skill-level">Lv {c.level}</span>
+                      <span className="skill-xp">{c.xp} xp</span>
+                    </button>
                   </li>
                 ))
             )}
@@ -232,13 +242,18 @@ export function GameHud({
               skills
                 .slice()
                 .sort((a, b) => a.skill.localeCompare(b.skill))
-                .map((s) => (
-                  <li key={s.skill}>
-                    <span className="skill-name">{s.skill}</span>
-                    <span className="skill-level">Lv {s.level}</span>
-                    <span className="skill-xp">{s.xp} xp</span>
-                  </li>
-                ))
+                .map((s) => {
+                  const linked =
+                    !!selectedClass &&
+                    (CLASS_SKILLS[selectedClass] as string[]).includes(s.skill);
+                  return (
+                    <li key={s.skill} className={linked ? "active-class" : ""}>
+                      <span className="skill-name">{s.skill}</span>
+                      <span className="skill-level">Lv {s.level}</span>
+                      <span className="skill-xp">{s.xp} xp</span>
+                    </li>
+                  );
+                })
             )}
           </ul>
         </div>

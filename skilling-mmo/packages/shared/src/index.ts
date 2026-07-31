@@ -4,6 +4,7 @@ import type { TraitId } from "./traits.js";
 import type { Appearance } from "./avatar.js";
 import type { ZoneId, NpcKind, OpenPanelKind } from "./zones.js";
 import type { ClassProgressDto, ClassId } from "./classes.js";
+import { CLASS_SKILLS } from "./classes.js";
 
 export const TICK_MS = 600;
 
@@ -297,6 +298,19 @@ export function professionStarterTool(profession: ProfessionId): string {
     default:
       return ITEMS.BASIC_AXE;
   }
+}
+
+/** Tool equipped when a class is selected in the HUD dropdown. */
+export function classStarterTool(classId: ClassId): string {
+  return professionStarterTool(classId);
+}
+
+/** True if this item is a primary tool for the class's skills. */
+export function toolMatchesClass(itemId: string | null | undefined, classId: ClassId): boolean {
+  if (!itemId) return false;
+  const skills = CLASS_SKILLS[classId];
+  const toolSkills = ITEM_DEFS[itemId]?.tool?.skills ?? [];
+  return toolSkills.some((s) => skills.includes(s));
 }
 
 /** Starter loadout: basic backpack + profession tool (both equipped). */

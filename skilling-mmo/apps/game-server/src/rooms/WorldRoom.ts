@@ -43,6 +43,8 @@ import {
   serializeClasses,
   starterClassForProfession,
   UNLOCK_ALL_CLASSES_FOR_TESTING,
+  classStarterTool,
+  toolMatchesClass,
   type ClientMessage,
   type ChatMessageDto,
   type EquipmentLoadout,
@@ -595,13 +597,97 @@ export class WorldRoom extends Room<WorldState> {
       return;
     }
     const ok = this.setActiveClass(playerId, classId);
+    if (!ok) {
+      client.send("ActionResult", {
+        type: "ActionResult",
+        ok: false,
+        action: "set_active_class",
+        reason: "class_locked",
+      });
+      return;
+    }
+
+    // Equip the class's gather tool into the primary slot
+    this.equipToolForClass(playerId, classId);
+    const ps = this.state.players.get(playerId);
+    this.syncHudState(playerId, ps);
+
     client.send("ActionResult", {
       type: "ActionResult",
-      ok,
+      ok: true,
       action: "set_active_class",
-      reason: ok ? undefined : "class_locked",
-      activeClass: ok ? classId : undefined,
+      activeClass: classId,
       classesJson: serializeClasses(this.playerClasses.get(playerId) ?? new Map()),
+      inventoryJson: JSON.stringify(this.visibleInventory(playerId)),
+      equipmentJson: serializeEquipment(this.playerEquipment.get(playerId) ?? {}),
+      inventoryCapacity: this.capacityOf(playerId),
+    });
+  }
+
+  /**
+   * Put the active class's tool in the primary hand.
+   * Swaps with inventory if the player already has it; grants the basic tool if missing.
+   */
+  private equipToolForClass(playerId: string, classId: ClassId) {
+    let inv = this.playerInventory.get(playerId);
+    let equipment = this.playerEquipment.get(playerId);
+    if (!inv || !equipment) return;
+
+    inv = padInventory(inv);
+    equipment = { ...equipment };
+
+    if (toolMatchesClass(equipment.primary?.itemId, classId)) {
+      this.playerInventory.set(playerId, inv);
+      this.playerEquipment.set(playerId, equipment);
+      return;
+    }
+
+    const preferred = classStarterTool(classId);
+    let toolSlot = inv.find((s) => s.itemId === preferred && s.quantity > 0);
+    if (!toolSlot) {
+      toolSlot = inv.find(
+        (s) => !!s.itemId && s.quantity > 0 && toolMatchesClass(s.itemId, classId),
+      );
+    }
+
+    // No tool in bag — grant the basic class tool for testing / new unlocks
+    if (!toolSlot) {
+      const empty = inv.find((s) => s.slot < this.capacityOf(playerId) && (!s.itemId || s.quantity <= 0));
+      if (empty) {
+        empty.itemId = preferred;
+        empty.quantity = 1;
+        toolSlot = empty;
+      } else {
+        // Bag full: still switch class, leave equipment alone
+        this.playerInventory.set(playerId, inv);
+        this.playerEquipment.set(playerId, equipment);
+        enqueueDirtyPlayer(playerId, {
+          inventory: inv,
+          equipmentJson: serializeEquipment(equipment),
+        });
+        return;
+      }
+    }
+
+    const prevPrimary = equipment.primary
+      ? { itemId: equipment.primary.itemId, quantity: equipment.primary.quantity }
+      : null;
+
+    equipment.primary = { itemId: toolSlot.itemId!, quantity: 1 };
+    if (prevPrimary) {
+      toolSlot.itemId = prevPrimary.itemId;
+      toolSlot.quantity = prevPrimary.quantity;
+    } else {
+      toolSlot.itemId = null;
+      toolSlot.quantity = 0;
+    }
+
+    this.playerInventory.set(playerId, inv);
+    this.playerEquipment.set(playerId, equipment);
+    enqueueDirtyPlayer(playerId, {
+      inventory: inv,
+      equipmentJson: serializeEquipment(equipment),
+      activeClassId: classId,
     });
   }
 
