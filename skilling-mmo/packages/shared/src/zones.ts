@@ -126,7 +126,8 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "tree_normal", kind: "tree", x: 980, y: CY + 40 }],
+    // Beside the spawn — short walk to stand next to the tree
+    resources: [{ id: "tree_normal", kind: "tree", x: 400, y: CY + 20 }],
   },
   [ZONES.MINES]: {
     id: ZONES.MINES,
@@ -145,7 +146,7 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "stone_chunk", kind: "rock", x: CX + 120, y: CY }],
+    resources: [{ id: "stone_chunk", kind: "rock", x: CX + 80, y: WORLD_HEIGHT_PX - 200 }],
   },
   [ZONES.FARM]: {
     id: ZONES.FARM,
@@ -164,7 +165,7 @@ export const ZONE_DEFS: Record<ZoneId, ZoneDef> = {
         interactRange: NPC_INTERACT_RANGE,
       },
     ],
-    resources: [{ id: "wheat_plot", kind: "crop", x: 300, y: CY + 40 }],
+    resources: [{ id: "wheat_plot", kind: "crop", x: WORLD_WIDTH_PX - 400, y: CY + 20 }],
   },
 };
 

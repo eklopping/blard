@@ -1005,6 +1005,9 @@ export class WorldRoom extends Room<WorldState> {
       ok: true,
       action: "gather",
       resourceId,
+      // Authoritative stand pose beside the resource (client must not use a stale pose)
+      x: ps.x,
+      y: ps.y,
     });
   }
 

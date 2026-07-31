@@ -489,7 +489,7 @@ export class WorldScene extends Phaser.Scene {
       const dist = Math.hypot(sprite.x - x, sprite.y - y);
 
       if (this.acting) {
-        // Never hard-teleport across the map while chopping — walk the remainder
+        // Never hard-teleport across the map while chopping — walk to the station stand
         if (dist <= 40) {
           sprite.setPosition(x, y);
           this.predictedTarget = undefined;
@@ -499,7 +499,8 @@ export class WorldScene extends Phaser.Scene {
             this.startChopVfx();
           }
         } else {
-          this.predictedTarget = { x, y };
+          const stand = this.resolveGatherStand(this.engagedResourceId, x, y);
+          this.predictedTarget = stand ?? { x, y };
           this.setWalking(id, true);
         }
         return;
@@ -514,9 +515,10 @@ export class WorldScene extends Phaser.Scene {
       }
 
       if (this.predictedTarget) {
-        // Soft-follow server if it got far ahead; never blink across the map
+        // If we drifted from the server while pathing to a station, retarget the station — not mid-map
         if (dist > 256) {
-          this.predictedTarget = { x, y };
+          const stand = this.resolveGatherStand(this.engagedResourceId, x, y);
+          this.predictedTarget = stand ?? { x, y };
         }
         return;
       }
@@ -553,30 +555,28 @@ export class WorldScene extends Phaser.Scene {
   onActionResult(msg: ActionResultMsg) {
     if (msg.ok && msg.action === "gather") {
       this.acting = true;
-      const distToServer =
-        this.localPlayer && this.serverPos
-          ? Math.hypot(
-              this.localPlayer.x - this.serverPos.x,
-              this.localPlayer.y - this.serverPos.y,
-            )
-          : 0;
+      const resourceId = msg.resourceId ?? this.engagedResourceId;
+      if (resourceId) this.engagedResourceId = resourceId;
 
-      if (distToServer <= 40) {
-        // Already beside the resource — lock pose and chop
-        this.predictedTarget = undefined;
-        this.gatherVfxPending = false;
-        if (this.localPlayer && this.serverPos) {
-          this.localPlayer.setPosition(this.serverPos.x, this.serverPos.y);
+      const stand = this.resolveGatherStand(resourceId, msg.x, msg.y);
+      if (this.localPlayer && stand) {
+        this.serverPos = { x: stand.x, y: stand.y };
+        const dist = Math.hypot(this.localPlayer.x - stand.x, this.localPlayer.y - stand.y);
+        if (dist <= 40) {
+          this.predictedTarget = undefined;
+          this.gatherVfxPending = false;
+          this.localPlayer.setPosition(stand.x, stand.y);
+          if (this.localId) this.setWalking(this.localId, false);
+          this.startChopVfx();
+        } else {
+          // Always walk to the station side-stand — never a stale mid-map pose
+          this.gatherVfxPending = true;
+          this.predictedTarget = stand;
+          if (this.localId) this.setWalking(this.localId, true);
         }
-        if (this.localId) this.setWalking(this.localId, false);
-        this.startChopVfx();
       } else {
-        // Server may already be in range (e.g. previous stand) — walk there, don't teleport
-        this.gatherVfxPending = true;
-        if (this.serverPos) {
-          this.predictedTarget = { x: this.serverPos.x, y: this.serverPos.y };
-        }
-        if (this.localId) this.setWalking(this.localId, true);
+        this.gatherVfxPending = false;
+        this.startChopVfx();
       }
       return;
     }
@@ -622,6 +622,41 @@ export class WorldScene extends Phaser.Scene {
       this.gatherVfxPending = false;
       this.stopChopVfx(false);
     }
+  }
+
+  /**
+   * Stand pose for gathering: must be beside the resource sprite.
+   * Prefer server-provided stand (x/y) only when it is actually in range of the station.
+   */
+  private resolveGatherStand(
+    resourceId: string | null | undefined,
+    standX?: number,
+    standY?: number,
+  ): { x: number; y: number } | undefined {
+    const sprite = resourceId ? this.resourceSprites.get(resourceId) : undefined;
+    const from = this.localPlayer
+      ? { x: this.localPlayer.x, y: this.localPlayer.y }
+      : { x: 0, y: 0 };
+
+    if (sprite) {
+      const res = { x: sprite.x, y: sprite.y };
+      const approach = findClosestSideApproach(from, res);
+      if (
+        typeof standX === "number" &&
+        typeof standY === "number" &&
+        Number.isFinite(standX) &&
+        Number.isFinite(standY) &&
+        Math.hypot(standX - res.x, standY - res.y) <= 56
+      ) {
+        return { x: standX, y: standY };
+      }
+      return approach ?? { x: res.x - 28, y: res.y };
+    }
+
+    if (typeof standX === "number" && typeof standY === "number") {
+      return { x: standX, y: standY };
+    }
+    return undefined;
   }
 
   private tryEngageResource(resourceId: string) {
